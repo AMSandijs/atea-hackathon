@@ -1,0 +1,28 @@
+# scratch is personal
+scratch/*
+!scratch/README.md
+
+# python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# local runtime state
+.airlock/
+*.vault.json
+plan*.json
+runs.jsonl
+
+# never commit these
+*.env
+.env*
+!.env.example
+samples/real/
+**/corpus/real/
+
+# editor / os
+.DS_Store
+Thumbs.db
