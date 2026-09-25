@@ -1,5 +1,18 @@
 # Build plan — Local AI Airlock
 
+## Implementation snapshot (25 Sep 2026)
+
+The repository now contains implementations for the T1-T9 modules and the
+team-selected Copilot pilot (approved local cases, an MCP `read_case` tool,
+read-only single-resource Azure capture, and local restoration). The test suite
+and invented-data evaluation should be rerun on each laptop; this snapshot is
+not a claim that every original task acceptance criterion has been independently
+verified. T10's second-opinion pass, T11's paired Copilot answer-quality
+measurement, and T12's clipboard/UI extras are **not implemented**. The MCP
+server is a pilot-specific, case-ID-only front door, not the originally proposed
+general `scan_text`/`ask_safely` interface. An actual Copilot session and live
+customer-environment safety remain unverified; see the README for boundaries.
+
 Work in order. Each task is sized for one agent session. A task is done when its
 acceptance criteria pass and `pytest` is green. **Stop and report after each task.**
 
@@ -111,12 +124,12 @@ list of misses with file and offset. Results are written to `eval/results-<date>
 
 ## T9 — Local model prose sweep
 
-Implement `detect/model.py` against Foundry Local (OpenAI-compatible endpoint via
-`FoundryLocalManager`), with an Ollama fallback selected by `policy.model.provider`.
+Implement `detect/model.py` against a loopback OpenAI-compatible endpoint (LM Studio
+or Foundry Local), with an Ollama fallback selected by `policy.model.provider`.
 Structured JSON output, retry ladder, hard span cap.
 
 **Done when:** the model runs only over rule-free prose spans; invalid JSON retries once
-then degrades to emitting nothing; seconds-per-call is recorded in the run log; recall on
+then aborts protected case release; evaluation records model sweep latency; recall on
 the corpus improves measurably over T8's rules-only baseline, and you can state by how
 much.
 
@@ -149,6 +162,14 @@ Only if T1-T11 are complete and the eval numbers are good.
 1. `mcpserver.py` — local MCP server exposing `scan_text` and `ask_safely`.
 2. `clipboard.py` — clipboard guard with a focus-change trigger.
 3. An HTML checkpoint view instead of terminal rendering.
+
+## Team-selected Copilot pilot (25 Sep)
+
+The team selected the Azure/Copilot workflow. Implement the local approved-case front
+door before further cloud-model features: close the raw-prompt gateway leak, prepare a
+sanitized case from an exported Azure bundle, expose only approved cases over local MCP,
+and restore a saved answer locally. Prove that blocked or rejected bundles never become
+MCP-readable. Live Azure collection and resource mutations require separate validation.
 
 ---
 

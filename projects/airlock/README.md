@@ -1,9 +1,10 @@
 # Local AI Airlock
 
 A chamber between the laptop and the cloud model. Customer-identifying material is
-detected and swapped locally, secrets are stopped outright, the sanitized text goes
-out for cloud-grade reasoning, and the answer is rebuilt with the real names on the
-way back in. **The identifying data never leaves the machine.**
+detected and swapped locally, detected secrets stop release, and the approved sanitized
+text can be used for cloud reasoning. The answer is rebuilt with the real names on the
+laptop. The boundary applies to data routed through Airlock; unknown identifiers can
+still be missed, so the operator reviews the output before releasing a case.
 
 Built for a local-AI hackathon: kickoff Fri 25 Sep 14:00 CEST, delivery Mon 28 Sep
 08:00 CEST (09:00 Riga), short presentation immediately after.
@@ -25,17 +26,113 @@ Built for a local-AI hackathon: kickoff Fri 25 Sep 14:00 CEST, delivery Mon 28 S
 | `docs/BUILD-PLAN.md` | Ordered tasks with acceptance criteria. Work through in order. |
 | `docs/EVAL.md` | Corpus, metrics, reporting format. |
 
-## Quickstart (once T1 is done)
+## Quickstart (Windows PowerShell)
 
-```bash
-python -m venv .venv && . .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -e ".[dev]"
-airlock scan samples/incident-bundle.txt
-airlock ask "why is this app service throttling?" --file samples/incident-bundle.txt
-pytest
+From the repo root, enter `projects/airlock` first (or open that folder by
+itself). Keep the virtual environment and all raw data local.
+
+```powershell
+Set-Location .\projects\airlock
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\airlock.exe scan samples\vm-cpu-alert.json
+.\.venv\Scripts\airlock.exe prepare samples\vm-cpu-alert.json --rules-only
+.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider --basetemp .pytest-tmp
 ```
 
 ## Non-goals
 
 Listed in `AGENTS.md` and enforced there. The short version: no chat UI, no browser
 extension, no MITM of Copilot traffic, no inline-completion interception.
+
+## Azure/Copilot pilot
+
+The local pilot starts from an exported Azure alert or resource snapshot. Airlock scans
+it locally, asks for approval, and gives GitHub Copilot an opaque case ID. Copilot reads
+only the approved sanitized snapshot through the local MCP server. Save Copilot's answer
+to a local text file and restore the real names on the laptop.
+The separate `airlock ask` cloud-gateway route also requires a configured loopback
+model and aborts if its prose sweep fails; an unconfigured gateway remains a local
+echo for offline testing.
+
+1. Open the **repository root** in VS Code and install the Python dependencies above.
+   The root `.vscode/mcp.json` registers the local `airlock` MCP server using
+   `projects/airlock/.venv`. The project-level config also works if you open only
+   `projects/airlock` in VS Code. Select the
+   **Airlock Investigator** custom agent and verify that only its `airlock` tool is
+   enabled for the investigation.
+2. Run a local model such as LM Studio, Foundry Local, or Ollama and set
+   `AIRLOCK_LOCAL_MODEL_URL` to its loopback chat endpoint. Foundry Local expects
+   `/v1/chat/completions`; Ollama expects `/api/chat` and `model.provider: ollama` in
+   `policy.yaml`. LM Studio also supports `/v1/chat/completions`; set
+   `model.provider: lm_studio` and use a model ID returned by its `/v1/models` endpoint.
+   On the validation laptop, LM Studio was listening at `http://127.0.0.1:1234`,
+   with Qwen2.5-Coder 7B and 14B downloaded. Install/load a compatible model on
+   your own machine; the default policy targets the LM Studio 7B model ID.
+   Start with:
+
+   ```powershell
+   $env:AIRLOCK_LOCAL_MODEL_URL = 'http://127.0.0.1:1234/v1/chat/completions'
+   .\.venv\Scripts\airlock.exe eval --with-model
+   ```
+
+   LM Studio can load the downloaded model when first called. The 14B comparison is:
+   `airlock eval --with-model --model-name qwen2.5-coder-14b-instruct`.
+   To use Foundry Local instead, set `model.provider: foundry_local`, set its model name
+   in `policy.yaml`, and point the URL at the Foundry Local server. For Foundry Local on Windows:
+
+   ```powershell
+   foundry model download qwen2.5-7b-instruct-generic-cpu
+   foundry model load qwen2.5-7b-instruct-generic-cpu
+   foundry server status
+   $env:AIRLOCK_LOCAL_MODEL_URL = 'http://127.0.0.1:<reported-port>/v1/chat/completions'
+   ```
+
+   Replace `<reported-port>` with the actual port from `foundry server status`.
+3. Run `airlock prepare samples/vm-cpu-alert.json`, inspect the checkpoint, and approve.
+   The command prints a random case ID. For an offline rules-only demo, use
+   `airlock prepare samples/vm-cpu-alert.json --rules-only`; that mode is explicit
+   because it has no local prose-model sweep.
+   For a model-backed demo that visibly swaps unkeyed names in free text, use
+   `samples/vm-cpu-alert-with-prose.json`; do not use `--rules-only` for that file.
+   To read a real resource's configuration with your existing Azure CLI sign-in, run
+   `airlock capture <full Azure resource ID>` in your local terminal. This uses the
+   read-only Azure `resource show` command, then applies the same checkpoint. The
+   optional `--metric "Percentage CPU"` also reads that resource's last hour of Azure
+   Monitor measurements. Alert history, guest processes, SQL queries, and Log Analytics
+   traces still require a local export and `airlock prepare` for a causal investigation.
+4. In the Airlock Investigator agent, ask: `Analyze case <case ID>. What likely caused
+   the CPU alert? Cite the evidence and uncertainty.` Use only the case ID; keep
+   original customer details out of the prompt and out of other Copilot tools.
+5. Save the Copilot answer to a local file outside the VS Code workspace and run
+   `airlock restore <case ID> answer.txt`. Keep raw exports and the restored answer
+   outside the Copilot workspace and out of its open editor tabs.
+
+This pilot can read an individual live resource's configuration or use an exported
+telemetry bundle. It can also read one live Azure Monitor metric, but does not yet fetch
+alert history or act in the Azure portal.
+A Copilot chat prompt, portal/browser tool, terminal command, workspace
+file, or direct Azure MCP tool can still send original data to the model if enabled or
+used. The custom agent narrows its tool list, but operators must verify the active tool
+selection and keep customer-specific text out of the prompt. The original-to-stand-in
+map is stored locally under `.airlock/cases` in the user's profile; protect that folder
+like other customer data. Detector metrics on invented data are not a guarantee for a
+new customer environment.
+
+## Current validation (25 Sep 2026)
+
+The seeded corpus has 18 sensitive items. Rules-only detection finds 16/18.
+Both of the user's LM Studio models found 18/18 and produced the same 60% strict
+match-to-seed rate:
+
+| LM Studio model | Recall | Model sweep per eligible file, median / worst |
+|---|---:|---:|
+| Qwen2.5-Coder 7B | 18/18 | 1.7 s / 3.3 s |
+| Qwen2.5-Coder 14B | 18/18 | 6.2 s / 33.4 s |
+
+The 7B model is the demo default: it also completed a model-backed sample case that
+swapped an unkeyed person, organisation, and VM identifier, then restored them locally.
+These are small, invented-data results, not a privacy guarantee. Several legitimate
+findings are not yet labeled in the corpus, so the 60% seed-match rate should not be
+presented as production precision. Answer-quality comparison against Copilot,
+customer-environment testing, and an actual VS Code Copilot session remain unverified.

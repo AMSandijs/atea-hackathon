@@ -14,7 +14,7 @@ Shared folder for our hackathon team. Clone it, open the **root folder** in VS C
 | `docs/LOCAL-AI-SETUP.md` | Fresh-laptop setup, chat and coding instructions for local AI |
 | `docs/GROUND-RULES.md` | Data handling and demo safety. Short, non-negotiable |
 | `ideas/` | One-pager per idea. Template included. Add yours |
-| `projects/airlock/` | Build-ready spec for the AI Airlock — our primary entry |
+| `projects/airlock/` | Working Airlock pilot, tests, invented-data evaluation, and design docs — our primary entry |
 | `projects/attachment-clerk/` | Build-ready spec for the Attachment Clerk — fallback / after |
 | `projects/local-ai-tools/` | Portable launcher and model settings for the team's coding assistant |
 | `DECISIONS.md` | What we chose and why, so we don't relitigate it on Saturday |
@@ -123,8 +123,22 @@ has hardware checks, manual commands and troubleshooting details.
 
 ## If you want to build rather than think
 
-Go to `projects/airlock/`, read its `AGENTS.md`, then open `docs/BUILD-PLAN.md` and take
-the lowest-numbered unfinished task. Same pattern in `attachment-clerk/`.
+Go to `projects/airlock/`, read its [README](projects/airlock/README.md) and
+`AGENTS.md`, then consult `docs/BUILD-PLAN.md`. The pilot already includes a
+local scan/prepare/restore CLI, a read-only Azure resource capture path, a
+sanitized-case MCP tool for Copilot, tests, and an invented-data 7B/14B
+comparison. The project README distinguishes tested functionality from demo
+steps that still need live validation. `attachment-clerk/` remains a separate
+fallback/after project.
+
+To use Airlock from this **root-folder** VS Code workspace, install its Python
+dependencies in `projects/airlock/.venv` as described in the project README.
+The root `.vscode/mcp.json` points Copilot to that interpreter. Select the
+**Airlock Investigator** custom agent and check its active tools before using
+an opaque, approved case ID. The local Aider coding assistant above is a
+separate workflow; its LM Studio launcher does not by itself sanitize Copilot
+traffic. Do not paste raw customer content into Copilot or enable direct
+Azure, workspace, or terminal tools for a customer investigation.
 
 ## Have an idea of your own?
 

@@ -1,0 +1,11 @@
+{
+  "alert": "Percentage CPU above 90 percent for 15 minutes",
+  "resourceId": "/subscriptions/8f4c2b91-3d07-4a1e-b8c2-77e3a9d61f04/resourceGroups/nordbro-prd-rg/providers/Microsoft.Compute/virtualMachines/qconv-vm-prd",
+  "vmName": "qconv-vm-prd",
+  "region": "westeurope",
+  "metric": "Percentage CPU",
+  "average": 96.4,
+  "windowMinutes": 15,
+  "process": "sqlservr.exe",
+  "observation": "A reporting query scanned the Orders table for 14 minutes while CPU remained above 90 percent. Query duration and CPU rose together."
+}

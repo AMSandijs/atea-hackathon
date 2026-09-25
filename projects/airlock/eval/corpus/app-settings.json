@@ -1,0 +1,5 @@
+{
+  "Storage": "DefaultEndpointsProtocol=https;AccountName=meridianstore;AccountKey=demo-only-key;EndpointSuffix=core.windows.net",
+  "exposed": "STORAGE_KEY=Xo9vK2mA7pQ1sR4tU6wY8zB0cD3eF5gH",
+  "Endpoint": "https://api.meridian.example.invalid"
+}

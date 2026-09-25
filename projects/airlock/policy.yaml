@@ -1,0 +1,47 @@
+version: 1
+
+tiers:
+  block:
+    - SECRET_KEY
+    - SECRET_UNKNOWN
+    - CONNECTION_STRING
+    - SAS_TOKEN
+    - PRIVATE_KEY
+    - PASSWORD
+    - BEARER_TOKEN
+  swap:
+    - AZURE_SUBSCRIPTION_ID
+    - AZURE_TENANT_ID
+    - AZURE_RESOURCE_ID
+    - AZURE_RESOURCE_NAME
+    - HOSTNAME
+    - PUBLIC_IP
+    - ORG_NAME
+    - PERSON
+    - EMAIL_ADDRESS
+    - IBAN
+    - NATIONAL_ID_LV
+    - NATIONAL_ID_DK
+  pass:
+    - AZURE_SERVICE_NAME
+    - AZURE_REGION
+    - SKU
+    - API_VERSION
+    - ERROR_CODE
+
+thresholds:
+  model_min_score: 0.55
+  review_below: 0.80
+  entropy_min_bits: 3.6
+  entropy_min_length: 20
+
+model:
+  provider: lm_studio
+  name: qwen2.5-coder-7b-instruct
+  max_span_chars: 4000
+
+gateway:
+  provider: azure_openai
+  endpoint_env: AIRLOCK_CLOUD_ENDPOINT
+  api_key_env: AIRLOCK_CLOUD_KEY
+  model: gpt-4o

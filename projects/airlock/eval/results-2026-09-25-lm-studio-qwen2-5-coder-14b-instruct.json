@@ -1,0 +1,188 @@
+{
+  "corpus_files": 9,
+  "date": "2026-09-25",
+  "latency_ms": {
+    "entropy": {
+      "median": 0.03300001844763756,
+      "worst": 0.242499983869493
+    },
+    "model": {
+      "median": 6205.609850032488,
+      "worst": 33387.264400022104
+    },
+    "rehydrate": {
+      "median": 0.0,
+      "worst": 0.0
+    },
+    "rules": {
+      "median": 2.0773999858647585,
+      "worst": 4.822799994144589
+    },
+    "vault": {
+      "median": 0.0,
+      "worst": 0.0
+    }
+  },
+  "mode": "local_model",
+  "model": {
+    "name": "qwen2.5-coder-14b-instruct",
+    "provider": "lm_studio"
+  },
+  "precision": {
+    "false_positives": [
+      {
+        "entity_type": "HOSTNAME",
+        "file": "alert-export.csv",
+        "offset": 85,
+        "text": "nordbro-rmq-prd.westeurope.cloudapp.azure.com"
+      },
+      {
+        "entity_type": "HOSTNAME",
+        "file": "alert-export.csv",
+        "offset": 181,
+        "text": "meridian-rmq-uat.westeurope.cloudapp.azure.com"
+      },
+      {
+        "entity_type": "HOSTNAME",
+        "file": "app-settings.json",
+        "offset": 113,
+        "text": "core.windows.net"
+      },
+      {
+        "entity_type": "HOSTNAME",
+        "file": "app-settings.json",
+        "offset": 216,
+        "text": "api.meridian.example.invalid"
+      },
+      {
+        "entity_type": "SECRET_UNKNOWN",
+        "file": "app-settings.json",
+        "offset": 16,
+        "text": "DefaultEndpointsProtocol"
+      },
+      {
+        "entity_type": "SECRET_UNKNOWN",
+        "file": "app-settings.json",
+        "offset": 158,
+        "text": "Xo9vK2mA7pQ1sR4tU6wY8zB0cD3eF5gH"
+      },
+      {
+        "entity_type": "AZURE_RESOURCE_NAME",
+        "file": "arm-template.json",
+        "offset": 133,
+        "text": "qconv-inhouse-prd"
+      },
+      {
+        "entity_type": "HOSTNAME",
+        "file": "arm-template.json",
+        "offset": 285,
+        "text": "core.windows.net"
+      },
+      {
+        "entity_type": "SECRET_UNKNOWN",
+        "file": "arm-template.json",
+        "offset": 188,
+        "text": "DefaultEndpointsProtocol"
+      },
+      {
+        "entity_type": "HOSTNAME",
+        "file": "incident-notes.md",
+        "offset": 119,
+        "text": "eyJhbGciOiJub25lIn0.eyJzdWIiOiJkZW1vIn0.signature-demo-value"
+      },
+      {
+        "entity_type": "SECRET_UNKNOWN",
+        "file": "incident-notes.md",
+        "offset": 159,
+        "text": "signature-demo-value"
+      },
+      {
+        "entity_type": "HOSTNAME",
+        "file": "ticket-thread.txt",
+        "offset": 114,
+        "text": "blob.example.invalid"
+      }
+    ],
+    "total_findings": 30,
+    "true_findings": 18,
+    "value": 0.6
+  },
+  "quality": {
+    "equivalent": null,
+    "status": "not_run",
+    "total": 0
+  },
+  "recall": {
+    "found": 18,
+    "misses": [],
+    "per_entity_type": {
+      "AZURE_RESOURCE_ID": {
+        "found": 1,
+        "recall": 1.0,
+        "total": 1
+      },
+      "AZURE_RESOURCE_NAME": {
+        "found": 1,
+        "recall": 1.0,
+        "total": 1
+      },
+      "AZURE_SUBSCRIPTION_ID": {
+        "found": 2,
+        "recall": 1.0,
+        "total": 2
+      },
+      "AZURE_TENANT_ID": {
+        "found": 1,
+        "recall": 1.0,
+        "total": 1
+      },
+      "BEARER_TOKEN": {
+        "found": 1,
+        "recall": 1.0,
+        "total": 1
+      },
+      "CONNECTION_STRING": {
+        "found": 2,
+        "recall": 1.0,
+        "total": 2
+      },
+      "HOSTNAME": {
+        "found": 1,
+        "recall": 1.0,
+        "total": 1
+      },
+      "IBAN": {
+        "found": 1,
+        "recall": 1.0,
+        "total": 1
+      },
+      "ORG_NAME": {
+        "found": 2,
+        "recall": 1.0,
+        "total": 2
+      },
+      "PERSON": {
+        "found": 2,
+        "recall": 1.0,
+        "total": 2
+      },
+      "PUBLIC_IP": {
+        "found": 2,
+        "recall": 1.0,
+        "total": 2
+      },
+      "SAS_TOKEN": {
+        "found": 1,
+        "recall": 1.0,
+        "total": 1
+      },
+      "SECRET_KEY": {
+        "found": 1,
+        "recall": 1.0,
+        "total": 1
+      }
+    },
+    "total": 18,
+    "value": 1.0
+  }
+}

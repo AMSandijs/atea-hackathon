@@ -1,0 +1,8 @@
+{
+  "servers": {
+    "airlock": {
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": ["-m", "airlock.mcpserver"]
+    }
+  }
+}

@@ -7,12 +7,16 @@ The rules that matter most:
 
 - Deterministic detection (regex, format, checksum, entropy) runs before any LLM call.
   The local model only handles free prose.
-- Exactly one module — `gateway.py` — is allowed to make a network call off this
-  machine. Never add another.
+- `gateway.py` is the sole outbound cloud-model request. The read-only Azure collector
+  contacts the customer's Azure tenant locally before sanitization. The prose detector
+  contacts a loopback-only local model.
+- In an Airlock investigation, only approved sanitized cases may be exposed through
+  the local MCP tool. Do not pass original customer values in Copilot prompts or other
+  Copilot tools.
 - `block`-tier findings (API keys, connection strings, tokens, passwords) are never
   transmitted in any form. They abort the request.
 - No chat UI. No interception of Copilot's own traffic. No inline-completion hooks.
 - All test and sample data uses invented organisations and people. Never real customers.
 
-Work through `docs/BUILD-PLAN.md` in order, one task at a time, and run `pytest` before
-reporting a task complete.
+The team-selected Copilot pilot in `docs/BUILD-PLAN.md` is the current priority.
+Run `pytest` before reporting a task complete.

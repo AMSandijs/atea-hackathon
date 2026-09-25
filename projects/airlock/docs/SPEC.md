@@ -100,6 +100,26 @@ Three ways in, one core:
 3. **Clipboard guard** — warns when sensitive text is copied and a browser AI tab takes
    focus. Best demo moment, lowest priority to build.
 
+## Copilot Azure investigation pilot
+
+For GitHub Copilot in VS Code, the Airlock is a local, intentionally invoked MCP tool.
+The operator first captures a read-only Azure snapshot on the laptop, reviews the exact
+sanitized output, and approves a random case ID. Copilot receives that case ID and the
+approved sanitized snapshot. The operator restores Copilot's final answer locally.
+
+The Copilot prompt and every enabled tool output are part of the cloud model context.
+Therefore the prompt must contain no customer identifiers, and direct Azure MCP,
+portal/browser, terminal, file-reading and other tools that can expose the customer
+environment must be disabled for the protected investigation. An Airlock MCP tool
+cannot sanitize data another enabled tool or the user already sent to Copilot.
+
+The pilot accepts an exported Azure alert/resource bundle and can read an individual
+live resource's configuration and an optional Azure Monitor metric through the
+operator's Azure CLI sign-in. Alert history, guest processes, and query traces still
+need a local export. The filter is not a proof that every secret
+or identifier was found: unknown content is
+reviewed by a human, and block-tier findings stop release entirely.
+
 ## Why not what already exists
 
 Have an answer ready for each; verify current capabilities before presenting, because
