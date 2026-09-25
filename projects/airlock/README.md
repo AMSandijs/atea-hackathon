@@ -51,6 +51,11 @@ The local pilot starts from an exported Azure alert or resource snapshot. Airloc
 it locally, asks for approval, and gives GitHub Copilot an opaque case ID. Copilot reads
 only the approved sanitized snapshot through the local MCP server. Save Copilot's answer
 to a local text file and restore the real names on the laptop.
+The broker now also has an internal, fixed read path for approved VM CPU, Application
+Insights failure metrics, Logic App run summaries, and Azure SQL metrics. It is not yet
+exposed through MCP or a user-facing investigation command. Its raw return stays local;
+do not give it to Copilot until the separate result sanitizer and release approval are
+implemented.
 The separate `airlock ask` cloud-gateway route also requires a configured loopback
 model and aborts if its prose sweep fails; an unconfigured gateway remains a local
 echo for offline testing.
@@ -99,8 +104,9 @@ echo for offline testing.
    `airlock capture <full Azure resource ID>` in your local terminal. This uses the
    read-only Azure `resource show` command, then applies the same checkpoint. The
    optional `--metric "Percentage CPU"` also reads that resource's last hour of Azure
-   Monitor measurements. Alert history, guest processes, SQL queries, and Log Analytics
-   traces still require a local export and `airlock prepare` for a causal investigation.
+   Monitor measurements. Alert history, guest processes, SQL query text, Logic App
+   action inputs/outputs, and Log Analytics traces still require a local export and
+   `airlock prepare` for a deeper causal investigation.
 4. In the Airlock Investigator agent, ask: `Analyze case <case ID>. What likely caused
    the CPU alert? Cite the evidence and uncertainty.` Use only the case ID; keep
    original customer details out of the prompt and out of other Copilot tools.
@@ -108,9 +114,10 @@ echo for offline testing.
    `airlock restore <case ID> answer.txt`. Keep raw exports and the restored answer
    outside the Copilot workspace and out of its open editor tabs.
 
-This pilot can read an individual live resource's configuration or use an exported
-telemetry bundle. It can also read one live Azure Monitor metric, but does not yet fetch
-alert history or act in the Azure portal.
+The current capture command can read one live resource's configuration or one metric,
+or the pilot can use an exported telemetry bundle. Although the internal broker adapters
+now cover several telemetry sources, they are not wired into Copilot iteration or result
+release. No alert-history fetch or portal interaction is implemented.
 A Copilot chat prompt, portal/browser tool, terminal command, workspace
 file, or direct Azure MCP tool can still send original data to the model if enabled or
 used. The custom agent narrows its tool list, but operators must verify the active tool

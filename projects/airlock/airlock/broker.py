@@ -103,3 +103,28 @@ def authorize_query(
         operation=checked.operation,
         time_range_minutes=checked.time_range_minutes,
     )
+
+
+def execute_query(
+    case_id: str,
+    proposal: QueryProposal,
+    *,
+    approve_query: Callable[[QueryReview], bool] | None,
+    directory: Path | None = None,
+) -> str | None:
+    """Authorize then execute one fixed Azure read; return raw data only locally."""
+
+    authorized = authorize_query(
+        case_id,
+        proposal,
+        approve_query=approve_query,
+        directory=directory,
+    )
+    if authorized is None:
+        return None
+    from .azure import AzureReadError, _execute_authorized_read
+
+    try:
+        return _execute_authorized_read(authorized)
+    except AzureReadError as exc:
+        raise BrokerError("Azure read failed; no result was released") from exc

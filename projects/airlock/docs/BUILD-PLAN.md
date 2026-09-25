@@ -4,9 +4,10 @@
 
 The repository contains the T1-T9 modules and team-selected Copilot pilot
 (approved local cases, an MCP `read_case` tool, read-only single-resource Azure
-capture, and local restoration), plus T13's local typed planner and T14's private
-case scope/broker authorization gate. T14 returns an authorization capability
-only; it does not execute Azure reads or iterate results through MCP. The test
+capture, and local restoration), plus T13's local typed planner, T14's private
+case scope/broker authorization gate, and T15's fixed read adapters. T15 returns
+raw results only to local code; results are not sanitized/released to MCP and do
+not yet iterate through Copilot. The test
 suite and invented-data evaluation should be rerun on each laptop; this snapshot
 is not a claim that every original task acceptance criterion has been independently
 verified. T10's second-opinion pass, T11's paired Copilot answer-quality
@@ -214,6 +215,27 @@ fixed adapter; this task does not execute Azure commands or release results over
   operator approval. No Azure subprocess/API adapter is called in this task.
 - Tests and `ruff check .` pass. Stop after T14 and report; adapter and result-release
   work remain separate tasks.
+
+## T15 — Fixed Azure read adapters (mocked validation only)
+
+Add the broker's only execution entry point. It must obtain a fresh T14 authorization
+and local per-query approval, then dispatch to fixed Azure CLI read operations for VM
+CPU, Application Insights failures, Logic App run history, and Azure SQL metrics. Use
+only fixed metric names, fixed GET route/API version, bounded time range, and a fixed
+record limit; no model-supplied KQL, URL, arguments, or shell text. Keep raw responses
+local and out of MCP pending the separate result-sanitization/release task. Do not run
+against a live Azure tenant in this task.
+
+**Done when:**
+- The broker refuses execution before resolving/invoking Azure if case approval,
+  scope, proposal validation, or per-query operator approval fails.
+- Each operation maps only to its documented, fixed read command; resource ID and time
+  range come from an independently validated authorization capability.
+- Output is bounded, Logic run input/output payloads are excluded, and raw results are
+  not persisted or exposed to MCP. CLI errors do not echo potentially sensitive output.
+- Tests mock the runner for every operation and prove rejection makes no process call;
+  no live Azure request is made. `pytest`, `ruff check .`, and formatting for changed
+  Python files pass. Stop after T15 and report.
 
 ---
 

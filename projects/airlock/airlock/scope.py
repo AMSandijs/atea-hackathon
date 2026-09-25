@@ -16,7 +16,7 @@ from .cases import case_directory, read_case
 _CASE_ID = re.compile(r"[0-9a-f]{24}\Z")
 _ALIAS = re.compile(r"[A-Z]{1,8}_[0-9]{1,6}\Z")
 _SUBSCRIPTION_ID = re.compile(r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}\Z")
-_SEGMENT = re.compile(r"[A-Za-z0-9_.()_-]{1,128}\Z")
+_SEGMENT = re.compile(r"[A-Za-z0-9._-]{1,128}\Z")
 _PROVIDER = re.compile(r"[A-Za-z][A-Za-z0-9.]{1,127}\Z")
 _MAX_TARGETS = 32
 _MAX_SCOPE_MINUTES = 1_440

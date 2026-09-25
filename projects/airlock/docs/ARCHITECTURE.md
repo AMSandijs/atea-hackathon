@@ -319,6 +319,30 @@ The scope file is private local state, not cryptographic protection against a ma
 process running as the same user; OS account/device security remains in the trust base.
 No Azure command is executed by T14, and no query result is made MCP-readable by it.
 
+T15 adds `broker.execute_query()` as the only production path from an untrusted
+proposal to an Azure read. It performs the T14 scope and operator checks, then sends
+the returned capability to fixed adapter code in `azure.py`. The adapter supports
+only `vm_cpu` (`Percentage CPU`), `app_failures` (`requests/failed` and
+`exceptions/count`), `sql_metrics` (`cpu_percent`, `physical_data_read_percent`,
+`log_write_percent`, `deadlock`, with separate aggregation sets), and `logic_runs`
+(HTTP GET of the fixed Logic workflow-runs route). The metric names, HTTP method, API version, interval, and record
+limit are constants; time range and resource ID come only from the approved capability.
+The Logic App request uses the fixed `StartTime ge` filter and `$top=100`.
+No KQL, URL, CLI flag, or shell text comes from the model. Logic run results are
+filtered to the approved time window and projected to status/timing/error metadata;
+trigger/action inputs and outputs are excluded. Azure responses are capped at 1 MiB.
+The command output remains raw local data returned to the local caller and is not
+persisted or exposed through MCP in T15. The following result-release task must sanitize
+it and obtain separate operator approval before Copilot can receive anything.
+
+```python
+execute_query(case_id, proposal, *, approve_query, directory=None) -> str | None
+```
+
+The function returns `None` for a rejected proposal or denied approval. Azure failures
+are reported without echoing CLI output or resource identifiers. Tests inject/mock the
+process runner; T15 does not run a query against a tenant.
+
 ```python
 create_case_scope(case_id, resource_ids, *, approve_scope, expires_in_minutes=...)
 case_capabilities(case_id) -> dict[str, tuple[str, ...]]

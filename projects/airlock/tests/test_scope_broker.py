@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
-from airlock.broker import BrokerError, authorize_query, case_capabilities
+from airlock.broker import BrokerError, authorize_query, case_capabilities, execute_query
 from airlock.planner import QueryProposal
 from airlock.scope import ScopeError, ScopeReview, create_case_scope
 
 CASE_ID = "a1b2c3d4e5f60718293a4b5c"
 VM_ID = "/subscriptions/11111111-2222-3333-4444-555555555555/resourceGroups/demo-rg/providers/Microsoft.Compute/virtualMachines/demo-vm"
 SQL_ID = "/subscriptions/11111111-2222-3333-4444-555555555555/resourceGroups/demo-rg/providers/Microsoft.Sql/servers/demo-sql/databases/demo-db"
+APP_ID = "/subscriptions/11111111-2222-3333-4444-555555555555/resourceGroups/demo-rg/providers/Microsoft.Insights/components/demo-app"
+LOGIC_ID = "/subscriptions/11111111-2222-3333-4444-555555555555/resourceGroups/demo-rg/providers/Microsoft.Logic/workflows/demo-flow"
 
 
 def _approved_case(directory: Path, approved: bool = True) -> None:
@@ -230,3 +233,142 @@ def test_broker_fails_closed_if_private_scope_permissions_are_tampered(tmp_path:
     scope_path.write_text(json.dumps(scope_data), encoding="utf-8")
     with pytest.raises(BrokerError, match="scope is unavailable or invalid"):
         case_capabilities(CASE_ID, tmp_path)
+
+
+def test_execute_query_uses_only_fixed_read_adapters_for_each_supported_operation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _approved_case(tmp_path)
+    create_case_scope(
+        CASE_ID,
+        {"VM_1": VM_ID, "APP_1": APP_ID, "LOGIC_1": LOGIC_ID, "SQL_1": SQL_ID},
+        approve_scope=lambda _: True,
+        directory=tmp_path,
+    )
+    monkeypatch.setattr("airlock.azure.shutil.which", lambda name: "C:/Azure/az.cmd")
+    calls: list[list[str]] = []
+    recent = (datetime.now(UTC) - timedelta(minutes=10)).isoformat()
+    old = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        assert kwargs["shell"] is False
+        assert kwargs["capture_output"] is True
+        if command[1] == "rest":
+            payload = {
+                "value": [
+                    {
+                        "properties": {
+                            "startTime": recent,
+                            "endTime": recent,
+                            "status": "Failed",
+                            "code": "InternalServerError",
+                            "error": {"code": "Failure", "message": "invented error"},
+                            "inputs": {"password": "must never leave local projection"},
+                            "outputs": {"token": "must never leave local projection"},
+                        },
+                    },
+                    {"properties": {"startTime": old, "status": "Succeeded"}},
+                ]
+            }
+        else:
+            payload = {"value": [{"name": {"value": "demo metric"}, "timeseries": []}]}
+        return subprocess.CompletedProcess(command, 0, json.dumps(payload))
+
+    monkeypatch.setattr("airlock.azure.subprocess.run", fake_run)
+    proposals = [
+        _proposal("vm_cpu", "VM_1", 30),
+        _proposal("app_failures", "APP_1", 30),
+        _proposal("logic_runs", "LOGIC_1", 30),
+        _proposal("sql_metrics", "SQL_1", 30),
+    ]
+    files_before = {path.name for path in tmp_path.iterdir()}
+    outputs = [
+        execute_query(CASE_ID, proposal, approve_query=lambda _: True, directory=tmp_path)
+        for proposal in proposals
+    ]
+
+    assert all(isinstance(output, str) for output in outputs)
+    assert {path.name for path in tmp_path.iterdir()} == files_before
+    assert json.loads(outputs[0])["target_alias"] == "VM_1"
+    assert len(calls) == 5  # SQL uses separate, compatible aggregations for deadlocks.
+    metric_calls = [command for command in calls if command[1:4] == ["monitor", "metrics", "list"]]
+    assert len(metric_calls) == 4
+    expected_metrics = [
+        {"Percentage CPU"},
+        {"requests/failed", "exceptions/count"},
+        {"cpu_percent", "physical_data_read_percent", "log_write_percent"},
+        {"deadlock"},
+    ]
+    for command, expected in zip(metric_calls, expected_metrics, strict=True):
+        metric_start = command.index("--metrics") + 1
+        metric_end = command.index("--start-time")
+        assert set(command[metric_start:metric_end]) == expected
+        assert "--resource" in command
+        assert "--interval" in command and command[command.index("--interval") + 1] == "1m"
+        start = datetime.fromisoformat(command[command.index("--start-time") + 1])
+        end = datetime.fromisoformat(command[command.index("--end-time") + 1])
+        assert timedelta(minutes=29, seconds=58) <= end - start <= timedelta(minutes=30, seconds=2)
+    assert all("delete" not in command and "update" not in command for command in calls)
+
+    logic_command = next(command for command in calls if command[1] == "rest")
+    assert logic_command[logic_command.index("--method") + 1] == "get"
+    assert (
+        logic_command[logic_command.index("--url") + 1] == f"{LOGIC_ID}/runs?api-version=2019-05-01"
+    )
+    logic_output = json.loads(outputs[2])
+    parameters = logic_command[logic_command.index("--url-parameters") + 1 :]
+    assert parameters[:2] == [
+        "$top=100",
+        f"$filter=StartTime ge '{logic_output['window']['start']}'",
+    ]
+    runs = logic_output["result"]["runs"]
+    assert len(runs) == 1
+    assert runs[0]["status"] == "Failed"
+    assert "inputs" not in outputs[2] and "outputs" not in outputs[2]
+
+
+def test_denied_query_does_not_resolve_or_invoke_azure_cli(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _scope(tmp_path)
+
+    def fail_which(_name: str) -> None:
+        raise AssertionError("Azure CLI must not be resolved after a denied query")
+
+    monkeypatch.setattr("airlock.azure.shutil.which", fail_which)
+    assert (
+        execute_query(CASE_ID, _proposal(), approve_query=lambda _: False, directory=tmp_path)
+        is None
+    )
+
+
+def test_azure_failure_does_not_echo_raw_cli_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _scope(tmp_path)
+    monkeypatch.setattr("airlock.azure.shutil.which", lambda name: "C:/Azure/az.cmd")
+
+    def fail_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise subprocess.CalledProcessError(
+            1, command, output="invented-secret", stderr="invented-secret"
+        )
+
+    monkeypatch.setattr("airlock.azure.subprocess.run", fail_run)
+    with pytest.raises(BrokerError, match="Azure read failed; no result was released") as error:
+        execute_query(CASE_ID, _proposal(), approve_query=lambda _: True, directory=tmp_path)
+    assert "invented-secret" not in str(error.value)
+
+
+def test_azure_response_over_limit_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _scope(tmp_path)
+    monkeypatch.setattr("airlock.azure.shutil.which", lambda name: "C:/Azure/az.cmd")
+
+    def oversized_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 0, json.dumps({"data": "x" * 1_100_000}))
+
+    monkeypatch.setattr("airlock.azure.subprocess.run", oversized_run)
+    with pytest.raises(BrokerError, match="Azure read failed; no result was released"):
+        execute_query(CASE_ID, _proposal(), approve_query=lambda _: True, directory=tmp_path)
