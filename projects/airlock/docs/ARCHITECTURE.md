@@ -25,6 +25,8 @@ airlock/
   clipboard.py      Stretch: clipboard guard
   cases.py          Local approved case store; only sanitized case text is readable by MCP
   azure.py          Read-only Azure CLI resource capture, with local identity
+  planner.py        Local model proposes one typed, bounded read; never executes tools
+  broker.py         Deterministic scope checks and fixed Azure read adapters
 eval/
   corpus/           Seeded fixtures (invented orgs, realistic shapes)
   seeds.yaml        Ground truth: what was planted where
@@ -283,6 +285,42 @@ managed by `gateway.py`; no raw Azure output is sent to GitHub by the collector.
 The collector supports a generic `az resource show` and an optional read-only Azure
 Monitor metric query for the same resource. The metric name is supplied locally and
 validated before invoking the CLI. Logs and application traces remain export-based.
+
+## Local investigation planner and broker (`planner.py`, `broker.py`)
+
+The local planner accepts a Copilot investigation goal containing case aliases only,
+plus a case summary that has already been sanitized. It returns a strict structured
+proposal containing exactly one operation, target alias, and bounded time range. The
+first implementation supports LM Studio's JSON Schema response format. The parser
+rejects malformed output, unknown fields, aliases outside the case scope, unsupported
+operation/alias combinations, and ranges outside the configured limit. A model response
+is a suggestion, never an authorization decision.
+
+The broker is the only component permitted to resolve aliases or invoke Azure reads.
+It rechecks the proposal against a private case scope and fixed service adapter, asks
+for operator approval before a query in the supervised pilot, and independently
+sanitizes and gates the resulting evidence before MCP can return it. It constructs
+argument arrays or fixed API requests from validated typed fields; it never executes
+model-generated shell text, arbitrary KQL, generic REST URLs, mutations, or model-selected
+extensions. A rejected plan, missing local model, scope mismatch, timeout, or block-tier
+finding produces no command side effect and no raw cloud-visible result. Query approval
+and result-release approval are separate state transitions.
+
+Planner response contract:
+
+```json
+{
+  "operation": "vm_cpu",
+  "target_alias": "VM_1",
+  "time_range_minutes": 30
+}
+```
+
+The operation enum and alias enum are derived from the case's approved capabilities.
+The broker also validates the relationship between the chosen operation and target;
+JSON Schema alone cannot enforce all cross-field policy. Planner prompts, replies, and
+raw Azure results are not written to logs. Only sanitized evidence and minimal decision
+metadata may enter the case audit record.
 
 ## Re-hydration (`rehydrate.py`)
 

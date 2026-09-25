@@ -171,6 +171,25 @@ sanitized case from an exported Azure bundle, expose only approved cases over lo
 and restore a saved answer locally. Prove that blocked or rejected bundles never become
 MCP-readable. Live Azure collection and resource mutations require separate validation.
 
+## T13 — Local typed query planner (first build slice)
+
+Implement `airlock/planner.py` as a loopback-only LM Studio client that maps a
+sanitized alias-only investigation goal and approved case capabilities into one
+strictly parsed proposal: operation, target alias and bounded time range. The planner
+does not execute Azure commands, mutate case scope, approve a query, or release output.
+
+**Done when:**
+- The request uses the configured local model and JSON Schema response format.
+- Invalid JSON, extra fields, missing local model, timeout, unknown aliases,
+  unsupported operation/target pairs and out-of-range time windows fail closed.
+- Unit tests prove only approved aliases and operations can be returned as proposals;
+  no Azure CLI call is made by this module.
+- Existing `pytest` and `ruff check .` pass.
+
+After T13, stop and report. T14 will add the private case scope and deterministic broker;
+later tasks will add mocked Azure adapters, separate query and result approvals, MCP
+iteration, the local GUI, and finally a supervised disposable-subscription test.
+
 ---
 
 ## Demo checklist (Sunday)

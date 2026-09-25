@@ -102,10 +102,14 @@ Three ways in, one core:
 
 ## Copilot Azure investigation pilot
 
-For GitHub Copilot in VS Code, the Airlock is a local, intentionally invoked MCP tool.
-The operator first captures a read-only Azure snapshot on the laptop, reviews the exact
-sanitized output, and approves a random case ID. Copilot receives that case ID and the
-approved sanitized snapshot. The operator restores Copilot's final answer locally.
+For GitHub Copilot in VS Code, Airlock is a local, intentionally invoked MCP tool.
+The operator approves a case scope and sanitized evidence. Copilot reasons over stable
+aliases, then asks Airlock for the next bounded read. A local AI planner turns that
+request into a typed proposal; the local broker checks the case scope, resolves aliases,
+and executes only a fixed read operation. Airlock sanitizes the result and asks the
+operator before releasing it to Copilot. This loop can repeat across related VMs,
+Application Insights, Logic Apps, and database telemetry. The operator restores the
+final answer locally.
 
 The Copilot prompt and every enabled tool output are part of the cloud model context.
 Therefore the prompt must contain no customer identifiers, and direct Azure MCP,
@@ -113,12 +117,16 @@ portal/browser, terminal, file-reading and other tools that can expose the custo
 environment must be disabled for the protected investigation. An Airlock MCP tool
 cannot sanitize data another enabled tool or the user already sent to Copilot.
 
-The pilot accepts an exported Azure alert/resource bundle and can read an individual
-live resource's configuration and an optional Azure Monitor metric through the
-operator's Azure CLI sign-in. Alert history, guest processes, and query traces still
-need a local export. The filter is not a proof that every secret
-or identifier was found: unknown content is
-reviewed by a human, and block-tier findings stop release entirely.
+The local planner never receives a shell, a generic Azure command tool, or permission
+to approve its own request. It can propose only an enumerated operation, an alias in
+the approved case, and bounded parameters. The broker owns the local Azure identity,
+original names, command construction, scope enforcement, and output release. Model
+proposals are untrusted even when they conform to a JSON schema. Raw Azure output stays
+local; secrets block release, and uncertain findings remain visible for operator review.
+
+The first build milestone implements and tests this planner contract offline. Azure
+adapters and Copilot's iterative MCP loop are separate later milestones, enabled only
+after their scope, sanitization, and approval tests pass.
 
 ## Why not what already exists
 

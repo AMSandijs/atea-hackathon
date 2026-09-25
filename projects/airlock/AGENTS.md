@@ -30,6 +30,12 @@ Rules for GitHub Copilot, Claude Code, or any other AI agent working in this rep
   response to the local sanitizer. The local prose model may use loopback only.
 - **Copilot can read approved sanitized cases only.** The MCP server must not expose
   arbitrary file reads, raw Azure data, the reverse map, or a restore tool.
+- **A local planner only proposes.** `planner.py` may return a typed operation, approved
+  case alias and bounded parameters. Only `broker.py` may resolve real identifiers or
+  call Azure, after independently validating scope and requiring configured operator
+  approval. No model output is passed to a shell or generic Azure command.
+- **Every Azure result crosses the local sanitizer.** MCP returns only an approved,
+  sanitized, bounded result. Query approval does not imply result-release approval.
 - **Blocked findings are never sent, not even encrypted or hashed.** A `block`-tier
   finding aborts the request and tells the user to rotate the credential.
 - **Never commit real customer data.** All fixtures, samples and tests use invented
@@ -39,8 +45,9 @@ Rules for GitHub Copilot, Claude Code, or any other AI agent working in this rep
 
 ## Non-goals — do not build these
 
-- A chat UI or conversational assistant. Input is text or a file; output is a checkpoint
-  and an answer.
+- A general chat UI or multi-user conversational service. A future single-user,
+  loopback-only investigation GUI is allowed only through the same broker and release
+  state machine as MCP.
 - Interception, proxying or rewriting of GitHub Copilot's network traffic. Fragile,
   undocumented, and against its terms. The CLI and the MCP server are the front doors.
 - Inline-completion (ghost text) integration. The latency budget makes it impossible.
