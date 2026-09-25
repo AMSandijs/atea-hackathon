@@ -18,11 +18,13 @@ airlock/
   classify.py       Finding -> tier, using policy.yaml
   vault.py          Deterministic structure-preserving stand-ins + reverse lookup
   sanitize.py       Orchestrates detect -> classify -> swap
-  gateway.py        The ONLY module that makes an off-machine network call
+  gateway.py        Sole outbound cloud-model request after sanitization
   rehydrate.py      Restores originals in the cloud answer; reports unmapped
   checkpoint.py     Renders the approval view, collects the decision
   mcpserver.py      Stretch: local MCP server front door
   clipboard.py      Stretch: clipboard guard
+  cases.py          Local approved case store; only sanitized case text is readable by MCP
+  azure.py          Read-only Azure CLI resource capture, with local identity
 eval/
   corpus/           Seeded fixtures (invented orgs, realistic shapes)
   seeds.yaml        Ground truth: what was planted where
@@ -109,9 +111,16 @@ rules cannot make: is this token an organisation name, is this a person.
 
 - Use structured JSON output, not tool calling. Small models choose tools badly and fill
   schemas well.
-- Retry ladder: parse failure -> re-prompt once with the parser error appended -> on
-  second failure emit nothing and log, never crash.
+- Retry ladder: parse failure -> re-prompt once with the parser error appended. A
+  protected case aborts on the second failure; an unprotected diagnostic scan can
+  return no model findings.
 - Hard cap on span length; chunk longer prose.
+- The model endpoint comes from `AIRLOCK_LOCAL_MODEL_URL` and must resolve to a
+  loopback address. Foundry Local and LM Studio use `/v1/chat/completions`;
+  Ollama uses `/api/chat`. Missing endpoint means the detector is inactive and the
+  operator sees a rules-only warning at case preparation.
+- Protected case preparation runs the model in strict mode: connection failure or
+  two invalid structured responses abort the case before approval or persistence.
 
 ```python
 def detect_prose(spans: list[tuple[int, str]], config: Policy) -> list[Finding]: ...
@@ -175,8 +184,8 @@ thresholds:
   entropy_min_length: 20
 
 model:
-  provider: foundry_local      # foundry_local | ollama
-  name: qwen2.5-7b
+  provider: lm_studio          # lm_studio | foundry_local | ollama
+  name: qwen2.5-coder-7b-instruct
   max_span_chars: 4000
 
 gateway:
@@ -213,6 +222,7 @@ Generators — every one preserves the **shape** of what it replaces:
 | `PUBLIC_IP` | an address in `192.0.2.0/24` or `198.51.100.0/24` (RFC 5737 documentation ranges) |
 | `HOSTNAME` | replace only the customer-identifying leftmost labels; preserve segment count and the real suffix (`westeurope.cloudapp.azure.com` stays) |
 | `AZURE_RESOURCE_NAME` | preserve separators, segment count, casing style and the environment suffix (`-prd`, `-uat`); swap only the identifying token |
+| `AZURE_RESOURCE_ID` | retain the `/subscriptions/.../resourceGroups/.../providers/...` structure; replace the subscription GUID, resource group and each resource instance name with the same stand-ins used when those values occur alone |
 | `ORG_NAME` | a word from a fixed invented list (`alpha`, `bravo`, `meridian`, ...), stable per original |
 | `PERSON` | `Firstname Lastname` from a fixed invented list |
 | `EMAIL_ADDRESS` | `personNN@example.invalid` |
@@ -234,24 +244,45 @@ Order matters:
 2. `entropy.detect` over the whole text.
 3. Compute spans not covered by any finding; filter to prose-looking spans.
 4. `model.detect_prose` over those spans only.
-5. Deduplicate overlapping findings — **longest match wins**, then highest score. A
-   finding inside an `AZURE_RESOURCE_ID` is absorbed by it.
-6. `classify`.
-7. If any `block` finding exists, return immediately with `blocked` populated and
-   `text` unchanged. Do not build a mapping, do not proceed.
-8. Replace `swap` findings right-to-left by offset so earlier offsets stay valid.
+5. Classify deterministic findings and abort immediately if **any** block-tier finding
+   exists, even if it overlaps a longer swap-tier finding. Keep text unchanged and the
+   mapping empty. This check precedes the local prose model as well.
+6. Classify model findings, then deduplicate remaining overlaps — longest match wins,
+   then highest score. A finding inside an `AZURE_RESOURCE_ID` is absorbed by it.
+7. Replace `swap` findings right-to-left by offset so earlier offsets stay valid.
 
 ## Gateway (`gateway.py`)
 
 The only place bytes leave the machine.
 
 ```python
-def send(sanitized: Sanitized, prompt: str, policy: Policy) -> tuple[str, int]: ...
+def send(sanitized: Sanitized, policy: Policy) -> tuple[str, int]: ...
 ```
 
 Assert on entry that `sanitized.blocked` is empty; raise if not. Record the exact
 transmitted payload for the demo's wire view. Read credentials from the env vars named
 in policy; never accept them as function arguments that could be logged.
+The gateway sends `sanitized.text` only. It must never append the original prompt, a
+file name, or any other unsanitized text to the request.
+
+## Copilot case boundary (`cases.py`, `mcpserver.py`)
+
+`cases.py` prepares a local file with `sanitize`, an explicit checkpoint, and a random
+case ID. It persists the approved sanitized text and the reverse map locally. The MCP
+server exposes only `read_case(case_id)`, which returns the approved sanitized text.
+It has no tool for preparing arbitrary input, reading arbitrary paths, or returning
+originals. The operator saves Copilot's answer to a local file and uses `airlock restore`
+to resolve stand-ins. The MCP server uses stdio and does not open a network port.
+
+The protected Copilot session must use only Airlock's tool for customer context.
+Copilot tool calls and prompts themselves reach GitHub; case IDs are opaque, and
+original Azure identifiers must never be supplied as arguments. The Azure collection
+adapter is read-only and uses the signed-in user's local identity. Azure CLI requests
+go to the customer's Azure tenant and are distinct from the outbound model boundary
+managed by `gateway.py`; no raw Azure output is sent to GitHub by the collector.
+The collector supports a generic `az resource show` and an optional read-only Azure
+Monitor metric query for the same resource. The metric name is supplied locally and
+validated before invoking the CLI. Logs and application traces remain export-based.
 
 ## Re-hydration (`rehydrate.py`)
 

@@ -81,6 +81,13 @@ latency    +1.8s median, +4.1s worst
 Then: *recall is not 100% and will never be 100%. That is why a human approves before
 anything is sent.*
 
+`airlock eval` is the rules-only baseline. With a running loopback model endpoint,
+`airlock eval --with-model` writes a separate `results-<date>-<provider>-<model>.json`
+report so different local models can be compared without overwriting each other.
+Use `--model-name` and, if needed, `--model-provider` to compare downloaded models.
+The incremental effect of local AI is measured rather than assumed. The corpus includes
+unkeyed person and organisation mentions in ticket prose to exercise that difference.
+
 ## Regression discipline
 
 Once T8 exists, every detector change reruns the eval. If recall goes up but precision

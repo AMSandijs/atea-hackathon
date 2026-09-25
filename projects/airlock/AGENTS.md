@@ -24,9 +24,12 @@ Rules for GitHub Copilot, Claude Code, or any other AI agent working in this rep
 - **Deterministic before model.** If a value can be found with a regex, a format check,
   a checksum or an entropy test, it is found that way. The local model is only invoked
   on free prose that rules cannot cover. Violating this makes the tool too slow to use.
-- **No cloud call may bypass `gateway.py`.** There is exactly one place in this codebase
-  where bytes leave the machine. Do not add another, do not add a convenience HTTP call
-  in a detector or a test helper.
+- **Customer data may reach the cloud model only through a reviewed Airlock release.**
+  `gateway.py` is the sole outbound model request. `azure.py` makes read-only requests
+  to the customer's Azure tenant using the operator's local identity, then returns the
+  response to the local sanitizer. The local prose model may use loopback only.
+- **Copilot can read approved sanitized cases only.** The MCP server must not expose
+  arbitrary file reads, raw Azure data, the reverse map, or a restore tool.
 - **Blocked findings are never sent, not even encrypted or hashed.** A `block`-tier
   finding aborts the request and tells the user to rotate the credential.
 - **Never commit real customer data.** All fixtures, samples and tests use invented

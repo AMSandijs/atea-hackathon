@@ -1,0 +1,3 @@
+timestamp,rule,resource,host
+2026-09-20T10:15:00Z,AppServiceErrors,qconv-inhouse-prd,nordbro-rmq-prd.westeurope.cloudapp.azure.com
+2026-09-20T10:20:00Z,QueueDepth,qconv-inhouse-uat,meridian-rmq-uat.westeurope.cloudapp.azure.com

@@ -1,0 +1,4 @@
+Mira from Meridian Logistics reports that the billing worker is delayed.
+
+The temporary download URL was:
+https://blob.example.invalid/invoices?sv=2026-01-01&se=2026-12-31&sig=demoSignature123

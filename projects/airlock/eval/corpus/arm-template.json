@@ -1,0 +1,6 @@
+{
+  "subscription": "/subscriptions/8f4c2b91-3d07-4a1e-b8c2-77e3a9d61f04/resourceGroups/nordbro-prd-rg/providers/Microsoft.Web/sites/qconv-inhouse-prd",
+  "settings": {
+    "connection": "DefaultEndpointsProtocol=https;AccountName=nordbro;AccountKey=not-a-real-demo-key;EndpointSuffix=core.windows.net"
+  }
+}
