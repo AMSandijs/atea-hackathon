@@ -11,10 +11,12 @@ Shared folder for our hackathon team. Clone it, open the **root folder** in VS C
 |---|---|
 | `docs/HACKATHON.md` | The event: schedule, prize, what the organisers asked for, who's judging |
 | `docs/WORKING-WITH-AI.md` | **Read this one.** How to think *and* build with AI in this repo |
+| `docs/LOCAL-AI-SETUP.md` | Fresh-laptop setup, chat and coding instructions for local AI |
 | `docs/GROUND-RULES.md` | Data handling and demo safety. Short, non-negotiable |
 | `ideas/` | One-pager per idea. Template included. Add yours |
 | `projects/airlock/` | Build-ready spec for the AI Airlock — our primary entry |
 | `projects/attachment-clerk/` | Build-ready spec for the Attachment Clerk — fallback / after |
+| `projects/local-ai-tools/` | Portable launcher and model settings for the team's coding assistant |
 | `DECISIONS.md` | What we chose and why, so we don't relitigate it on Saturday |
 | `scratch/` | Your own mess. Git-ignored |
 
@@ -23,7 +25,8 @@ Shared folder for our hackathon team. Clone it, open the **root folder** in VS C
 1. Open the root folder in VS Code.
 2. Read `docs/WORKING-WITH-AI.md`. It's short and it's the thing that makes the rest work.
 3. Skim `docs/HACKATHON.md` so you know what we're being judged on.
-4. Look at `ideas/`. If you have one that isn't there, copy `ideas/_TEMPLATE.md` and
+4. To use the local coding assistant, follow `docs/LOCAL-AI-SETUP.md`.
+5. Look at `ideas/`. If you have one that isn't there, copy `ideas/_TEMPLATE.md` and
    fill it in — it takes fifteen minutes and the template does the hard thinking for you.
 
 ## If you want to build rather than think

@@ -9,6 +9,7 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 .ruff_cache/
+.aider.tags.cache.*/
 
 # local runtime state
 .airlock/
