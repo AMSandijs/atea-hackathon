@@ -2,16 +2,18 @@
 
 ## Implementation snapshot (25 Sep 2026)
 
-The repository now contains implementations for the T1-T9 modules and the
-team-selected Copilot pilot (approved local cases, an MCP `read_case` tool,
-read-only single-resource Azure capture, and local restoration). The test suite
-and invented-data evaluation should be rerun on each laptop; this snapshot is
-not a claim that every original task acceptance criterion has been independently
+The repository contains the T1-T9 modules and team-selected Copilot pilot
+(approved local cases, an MCP `read_case` tool, read-only single-resource Azure
+capture, and local restoration), plus T13's local typed planner and T14's private
+case scope/broker authorization gate. T14 returns an authorization capability
+only; it does not execute Azure reads or iterate results through MCP. The test
+suite and invented-data evaluation should be rerun on each laptop; this snapshot
+is not a claim that every original task acceptance criterion has been independently
 verified. T10's second-opinion pass, T11's paired Copilot answer-quality
 measurement, and T12's clipboard/UI extras are **not implemented**. The MCP
-server is a pilot-specific, case-ID-only front door, not the originally proposed
-general `scan_text`/`ask_safely` interface. An actual Copilot session and live
-customer-environment safety remain unverified; see the README for boundaries.
+server remains a pilot-specific, case-ID-only front door, not the originally
+proposed general `scan_text`/`ask_safely` interface. An actual Copilot session and
+live Azure collection safety remain unverified; see the README for boundaries.
 
 Work in order. Each task is sized for one agent session. A task is done when its
 acceptance criteria pass and `pytest` is green. **Stop and report after each task.**
@@ -186,9 +188,32 @@ does not execute Azure commands, mutate case scope, approve a query, or release 
   no Azure CLI call is made by this module.
 - Existing `pytest` and `ruff check .` pass.
 
-After T13, stop and report. T14 will add the private case scope and deterministic broker;
-later tasks will add mocked Azure adapters, separate query and result approvals, MCP
-iteration, the local GUI, and finally a supervised disposable-subscription test.
+T13 added a proposal-only local planner. T14 adds private scope and a query authorization
+gate; later tasks will add mocked Azure adapters, separate result approval and sanitized
+MCP iteration, the local GUI, and finally a supervised disposable-subscription test.
+
+## T14 — Private scope and deterministic broker authorization
+
+Implement a private per-case scope binding validated aliases to supported Azure ARM
+resource IDs. Infer the allowed operation from the resource provider/type rather than
+accepting an operation list from the model or caller. Require an approved case and
+trusted-local operator approval to create scope. Add broker APIs that expose only alias
+capabilities to the planner and independently reload/revalidate case approval, scope,
+expiry, target, operation, and time range before requiring a separate per-query operator
+approval. Successful authorization returns an internal typed capability for a future
+fixed adapter; this task does not execute Azure commands or release results over MCP.
+
+**Done when:**
+- Only supported, structurally valid ARM resource IDs can be bound; provider/type and
+  operation are checked together and aliases are unique.
+- Scope creation fails for unapproved cases, absent/rejected approval, invalid duration,
+  invalid IDs, or an existing scope. Private resource IDs never appear in `read_case()`
+  or planner capabilities.
+- Broker authorization fails closed for expired/corrupt scope, rejected proposals,
+  unapproved cases, out-of-scope aliases, operation mismatches, and rejected/failed
+  operator approval. No Azure subprocess/API adapter is called in this task.
+- Tests and `ruff check .` pass. Stop after T14 and report; adapter and result-release
+  work remain separate tasks.
 
 ---
 

@@ -306,6 +306,25 @@ extensions. A rejected plan, missing local model, scope mismatch, timeout, or bl
 finding produces no command side effect and no raw cloud-visible result. Query approval
 and result-release approval are separate state transitions.
 
+T14 implements the scope and authorization boundary, not an Azure adapter. The private
+`<case-id>.scope.json` file binds opaque aliases to validated ARM resource IDs and a
+fixed operation set inferred from each resource's provider/type. Scope creation requires
+an explicit trusted-local approval callback and an approved case. The planner receives
+only `case_capabilities()` (aliases and operations). `authorize_query()` reloads the
+approved case and private scope, checks expiry and the proposal's alias/operation/time
+range, and requires a separate trusted-local per-query approval. Only then does it return
+an internal `AuthorizedRead` containing the real resource ID for a future fixed adapter.
+The callback must be implemented by the local CLI/GUI, never by an LLM or MCP client.
+The scope file is private local state, not cryptographic protection against a malicious
+process running as the same user; OS account/device security remains in the trust base.
+No Azure command is executed by T14, and no query result is made MCP-readable by it.
+
+```python
+create_case_scope(case_id, resource_ids, *, approve_scope, expires_in_minutes=...)
+case_capabilities(case_id) -> dict[str, tuple[str, ...]]
+authorize_query(case_id, proposal, *, approve_query) -> AuthorizedRead | None
+```
+
 Planner response contract:
 
 ```json
