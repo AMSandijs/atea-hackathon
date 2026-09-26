@@ -14,7 +14,10 @@ _UUID_ANY = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-
 
 _RESOURCE_ID = re.compile(
     rf"(?P<resource>/subscriptions/(?P<subscription>{_UUID_ANY})/resourceGroups/"
-    r"[A-Za-z0-9._-]+/providers/[A-Za-z0-9.]+(?:/[A-Za-z0-9._-]+){2,})",
+    r"[A-Za-z0-9._-]+/providers/[A-Za-z0-9.]+"
+    # type/name pairs; stop before a nested extension route such as
+    # /providers/Microsoft.Insights/metrics/..., which is public and not a resource name
+    r"(?:/(?!providers/)[A-Za-z0-9._-]+/(?!providers(?:/|$))[A-Za-z0-9._-]+)+)",
     re.IGNORECASE,
 )
 _SUBSCRIPTION = re.compile(

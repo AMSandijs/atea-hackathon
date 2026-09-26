@@ -88,6 +88,40 @@ Use `--model-name` and, if needed, `--model-provider` to compare downloaded mode
 The incremental effect of local AI is measured rather than assumed. The corpus includes
 unkeyed person and organisation mentions in ticket prose to exercise that difference.
 
+## Investigation-loop evaluation (T21)
+
+`python -m eval.investigations` replays invented multi-resource incidents through the
+real Copilot loop: MCP `request_investigation` → local planner → queue → supervisor →
+broker → fixed adapter → sanitizer → result gate → MCP `investigation_status` and
+`read_evidence`. Only the `az` subprocess and the operator's clicks are simulated: a fake
+runner returns invented Azure CLI JSON (metric responses carry the full resource ID in
+their `id` fields, and Logic App errors carry free text), and a scripted operator
+approves or denies. It runs in an isolated temporary case directory and never touches
+`~/.airlock` or Azure.
+
+Two planner modes:
+
+- **scripted** (default): the planner's HTTP call returns the scenario's expected JSON,
+  so the real parsing, alias checks and broker checks run, but the model's judgement is
+  not measured. Evidence release is rules-only.
+- **`--with-model`**: the configured loopback model plans every goal and runs the strict
+  prose sweep during sanitization. Planner accuracy is measured against each turn's
+  expected proposal.
+
+Per turn it records: final status vs. expected; planner outcome vs. expected; approvals
+requested (query, result); whether released evidence contains every expected signal
+(*useful*); planted identifiers found in anything Copilot can read — MCP responses,
+evidence text, queue files (*leaked*); expected pass-tier tokens missing from evidence
+(*over-redacted*); and planning, supervision, and total latency. With the Azure call
+mocked, latency excludes Azure itself. Results go to
+`eval/results-<date>-investigations[-<provider>-<model>].json`.
+
+Scenarios include deliberate hard cases: an unknown organisation name inside a Logic App
+error message, a prompt injection in Azure text, a connection string in an error, alias
+confusion, and an operator denial. A leak in the report is a finding to discuss, not a
+harness failure. These scenarios are seeded and invented; passing them is not evidence
+of privacy for arbitrary customer data.
+
 ## Regression discipline
 
 Once T8 exists, every detector change reruns the eval. If recall goes up but precision

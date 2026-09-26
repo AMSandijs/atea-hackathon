@@ -34,6 +34,7 @@ eval/
   corpus/           Seeded fixtures (invented orgs, realistic shapes)
   seeds.yaml        Ground truth: what was planted where
   score.py          Computes the four numbers
+  investigations.py (T21) Replays invented incidents through the MCP-to-GUI loop; see EVAL.md
 tests/
 policy.yaml
 ```
@@ -82,7 +83,7 @@ implement, each with its own unit test:
 |---|---|
 | `AZURE_SUBSCRIPTION_ID` | GUID appearing after `/subscriptions/` or a `subscriptionId` key |
 | `AZURE_TENANT_ID` | GUID after `tenantId`, `/tenants/`, or in an authority URL |
-| `AZURE_RESOURCE_ID` | full `/subscriptions/.../resourceGroups/.../providers/...` path |
+| `AZURE_RESOURCE_ID` | full `/subscriptions/.../resourceGroups/.../providers/...` path, as type/name pairs; the match stops before a nested `/providers/` extension route (e.g. `.../providers/Microsoft.Insights/metrics/...`), which stays pass-through text (T22) |
 | `AZURE_RESOURCE_NAME` | the trailing name segments of a resource ID; also `name:` keys in ARM/Bicep |
 | `HOSTNAME` | FQDN, with `*.cloudapp.azure.com`, `*.azurewebsites.net` etc. treated as high confidence |
 | `PUBLIC_IP` | IPv4/IPv6 excluding RFC1918, loopback, link-local |
@@ -107,6 +108,14 @@ score Shannon entropy per token, flag tokens above a configurable threshold that
 longer than a configurable minimum and are not in an allowlist (known base64 of public
 data, git SHAs, etc.). Emits `SECRET_UNKNOWN` findings. Expect false positives; that is
 what the checkpoint is for.
+
+Naming-convention tokens are not unknown secrets (T22). A token is skipped when it has
+no uppercase letters, contains at least one `-` or `_` separator, and every segment is
+either letters only (up to 16), digits only (up to 4), or letters and digits of at most
+4 characters. This covers Azure resource names such as `kv-nordbro-shared-weu-001` and
+metric names such as `physical_data_read_percent`, while mixed-case, base64, hex, or
+long alphanumeric segments are still scored. Known secret formats are caught by the
+deterministic rules first, regardless of this skip.
 
 ### `detect/model.py`
 
@@ -254,7 +263,13 @@ Order matters:
    mapping empty. This check precedes the local prose model as well.
 6. Classify model findings, then deduplicate remaining overlaps — longest match wins,
    then highest score. A finding inside an `AZURE_RESOURCE_ID` is absorbed by it.
-7. Replace `swap` findings right-to-left by offset so earlier offsets stay valid.
+7. Generate stand-ins for the `swap` findings. Then find any other occurrence of an
+   original the vault already maps — including resource-group and resource names learned
+   from a resource ID in the same text, and a case's mapping preloaded when releasing
+   evidence — that is not already covered by a finding. Match case-insensitively, at
+   least 5 characters, not inside a longer `[\w-]` token. Add each as a `swap` finding
+   with detector `vault`, which reuses the same stand-in (T22).
+8. Replace `swap` findings right-to-left by offset so earlier offsets stay valid.
 
 ## Gateway (`gateway.py`)
 
@@ -301,6 +316,12 @@ first implementation supports LM Studio's JSON Schema response format. The parse
 rejects malformed output, unknown fields, aliases outside the case scope, unsupported
 operation/alias combinations, and ranges outside the configured limit. A model response
 is a suggestion, never an authorization decision.
+
+Time windows (T22): the prompt tells the model to use 60 minutes when the goal gives no
+window. When the goal states exactly one explicit duration (`N minutes|hours|days`,
+including `an hour`/`a day`), the planner converts it to minutes deterministically; a
+proposal with a different range is rejected, and a stated duration above 1,440 minutes
+is rejected rather than silently clamped.
 
 The broker is the only component permitted to resolve aliases or invoke Azure reads.
 It rechecks the proposal against a private case scope and fixed service adapter, asks

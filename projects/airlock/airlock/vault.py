@@ -321,6 +321,20 @@ class Vault:
     def original(self, stand_in: str) -> str | None:
         return self._pairs.get(stand_in)
 
+    def known_originals(self) -> list[str]:
+        """Normalised originals this vault already maps, including preloaded pairs."""
+
+        return list(self._known_originals)
+
+    def known_entity_type(self, text: str) -> str | None:
+        """The entity type an original was first mapped as, if seen in this session."""
+
+        normalised = _normalise(text)
+        return next(
+            (entity for entity, value in self._originals if value == normalised),
+            None,
+        )
+
     def pairs(self) -> dict[str, str]:
         return dict(self._pairs)
 

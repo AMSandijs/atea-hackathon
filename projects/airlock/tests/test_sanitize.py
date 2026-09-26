@@ -73,3 +73,64 @@ def test_block_wins_even_when_overlapped_by_longer_swap(tmp_path: Path, monkeypa
     assert result.blocked
     assert result.text == source
     assert result.mapping == {}
+
+
+_ARM = (
+    "/subscriptions/8f4c2b91-3d07-4a1e-b8c2-77e3a9d61f04/resourceGroups/nordbro-prd-rg/providers/"
+)
+
+
+def test_metric_ids_sanitize_without_error_and_keep_the_metric_route(tmp_path: Path) -> None:
+    source = (
+        f'{{"id": "{_ARM}microsoft.insights/components/nordbro-web-ai/providers/'
+        'Microsoft.Insights/metrics/requests/failed", "value": 188}\n'
+        f'{{"id": "{_ARM}Microsoft.Compute/virtualMachines/nordbro-vm1/providers/'
+        'Microsoft.Insights/metrics/Percentage CPU", "value": 97.5}'
+    )
+    result = sanitize(source, load_policy(), Vault(b"key", tmp_path / "vault.json"))
+    assert result.blocked == []
+    assert "nordbro" not in result.text
+    assert "/providers/Microsoft.Insights/metrics/requests/failed" in result.text
+    assert "/providers/Microsoft.Insights/metrics/Percentage CPU" in result.text
+
+
+def test_bare_mentions_of_names_learned_from_a_resource_id_are_swapped(tmp_path: Path) -> None:
+    source = (
+        f"target: {_ARM}Microsoft.Web/sites/nordbro-web-app\n"
+        "description: 5xx rate high on nordbro-web-app. Group NORDBRO-PRD-RG is shared."
+    )
+    result = sanitize(source, load_policy(), Vault(b"key", tmp_path / "vault.json"))
+    assert "nordbro" not in result.text.lower()
+    site_alias = result.text.split("/sites/")[1].split("\n")[0]
+    assert f"on {site_alias}." in result.text
+
+
+def test_names_from_a_preloaded_case_mapping_are_swapped_in_new_text(tmp_path: Path) -> None:
+    first = sanitize(
+        f"{_ARM}Microsoft.Web/sites/nordbro-web-app",
+        load_policy(),
+        Vault(b"key", tmp_path / "a.json"),
+    )
+    evidence = sanitize(
+        "error: nordbro-web-app returned 503",
+        load_policy(),
+        Vault(b"other", tmp_path / "b.json", initial_pairs=first.mapping),
+    )
+    assert "nordbro-web-app" not in evidence.text
+    alias = next(s for s, o in first.mapping.items() if o == "nordbro-web-app")
+    assert evidence.text == f"error: {alias} returned 503"
+
+
+def test_known_names_are_not_replaced_inside_longer_tokens(tmp_path: Path) -> None:
+    first = sanitize(
+        f"{_ARM}Microsoft.Web/sites/nordbro-web-app",
+        load_policy(),
+        Vault(b"key", tmp_path / "a.json"),
+    )
+    evidence = sanitize(
+        "see nordbro-web-app-staging-copy and xnordbro-web-app",
+        load_policy(),
+        Vault(b"other", tmp_path / "b.json", initial_pairs=first.mapping),
+    )
+    vault_hits = [f for f in evidence.findings if f.detector == "vault"]
+    assert vault_hits == []

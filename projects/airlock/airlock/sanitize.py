@@ -52,6 +52,33 @@ def _deduplicate(findings: list[Finding]) -> list[Finding]:
     return sorted(selected, key=lambda item: item.start)
 
 
+_MIN_KNOWN_CHARS = 5
+
+
+def _known_mentions(text: str, findings: list[Finding], vault: Vault) -> list[Finding]:
+    """Find further mentions of originals the vault already maps (e.g. a bare resource name)."""
+
+    originals = sorted(
+        (value for value in vault.known_originals() if len(value) >= _MIN_KNOWN_CHARS),
+        key=len,
+        reverse=True,
+    )
+    if not originals:
+        return []
+    alternation = "|".join(re.escape(value).replace(r"\ ", r"\s+") for value in originals)
+    pattern = re.compile(rf"(?<![\w-])(?:{alternation})(?![\w-])", re.IGNORECASE)
+    taken = [(finding.start, finding.end) for finding in findings]
+    mentions: list[Finding] = []
+    for match in pattern.finditer(text):
+        start, end = match.span()
+        if any(start < other_end and other_start < end for other_start, other_end in taken):
+            continue
+        entity_type = vault.known_entity_type(match.group(0)) or "AZURE_RESOURCE_NAME"
+        mentions.append(Finding(entity_type, match.group(0), start, end, "vault", 1.0, "swap"))
+        taken.append((start, end))
+    return mentions
+
+
 def sanitize(text: str, policy: Policy, vault: Vault, strict_model: bool = False) -> Sanitized:
     """Detect, classify, and replace sensitive spans without sending anything."""
 
@@ -82,6 +109,11 @@ def sanitize(text: str, policy: Policy, vault: Vault, strict_model: bool = False
         stand_in = vault.stand_in(finding)
         replacements.append((finding, stand_in))
         mapping.update(vault.related_pairs(finding))
+    known = _known_mentions(text, findings, vault)
+    for finding in known:
+        replacements.append((finding, vault.stand_in(finding)))
+        mapping.update(vault.related_pairs(finding))
+    findings = sorted(findings + known, key=lambda item: item.start)
     sanitized_text = text
     for finding, stand_in in sorted(replacements, key=lambda item: item[0].start, reverse=True):
         sanitized_text = sanitized_text[: finding.start] + stand_in + sanitized_text[finding.end :]

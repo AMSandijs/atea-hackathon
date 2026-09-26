@@ -37,3 +37,23 @@ def test_validates_latvian_and_danish_personal_code_shapes() -> None:
     assert "NATIONAL_ID_LV" in types
     assert "NATIONAL_ID_DK" in types
     assert "NATIONAL_ID_LV" not in _types("LV 321390-10000")
+
+
+def test_resource_id_stops_before_nested_metrics_extension() -> None:
+    from airlock.config import load_policy
+    from airlock.detect.rules import detect
+
+    base = (
+        "/subscriptions/8f4c2b91-3d07-4a1e-b8c2-77e3a9d61f04/resourceGroups/nordbro-rg/providers/"
+    )
+    cases = {
+        base + "microsoft.insights/components/nordbro-web-ai/providers/Microsoft.Insights/"
+        "metrics/requests/failed": base + "microsoft.insights/components/nordbro-web-ai",
+        base + "Microsoft.Compute/virtualMachines/nordbro-vm1/providers/Microsoft.Insights/"
+        "metrics/Percentage CPU": base + "Microsoft.Compute/virtualMachines/nordbro-vm1",
+        base + "Microsoft.Sql/servers/nordbro-sql/databases/orders": base
+        + "Microsoft.Sql/servers/nordbro-sql/databases/orders",
+    }
+    for text, expected in cases.items():
+        ids = [f.text for f in detect(text, load_policy()) if f.entity_type == "AZURE_RESOURCE_ID"]
+        assert ids == [expected]
