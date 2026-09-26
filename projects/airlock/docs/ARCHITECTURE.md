@@ -205,7 +205,7 @@ the answer becomes nonsense.
 
 ```python
 class Vault:
-    def __init__(self, key: bytes, path: Path | None = None): ...
+    def __init__(self, key: bytes, path: Path | None = None, initial_pairs: dict[str, str] | None = None): ...
     def stand_in(self, finding: Finding) -> str: ...
     def original(self, stand_in: str) -> str | None: ...
     def pairs(self) -> dict[str, str]: ...
@@ -271,10 +271,10 @@ file name, or any other unsanitized text to the request.
 
 `cases.py` prepares a local file with `sanitize`, an explicit checkpoint, and a random
 case ID. It persists the approved sanitized text and the reverse map locally. The MCP
-server exposes only `read_case(case_id)`, which returns the approved sanitized text.
-It has no tool for preparing arbitrary input, reading arbitrary paths, or returning
-originals. The operator saves Copilot's answer to a local file and uses `airlock restore`
-to resolve stand-ins. The MCP server uses stdio and does not open a network port.
+server exposes only approved sanitized case/evidence readers. It has no tool for
+preparing arbitrary input, reading arbitrary paths, or returning originals. The operator
+saves Copilot's answer to a local file and uses `airlock restore` to resolve stand-ins.
+The MCP server uses stdio and does not open a network port.
 
 The protected Copilot session must use only Airlock's tool for customer context.
 Copilot tool calls and prompts themselves reach GitHub; case IDs are opaque, and
@@ -342,6 +342,34 @@ execute_query(case_id, proposal, *, approve_query, directory=None) -> str | None
 The function returns `None` for a rejected proposal or denied approval. Azure failures
 are reported without echoing CLI output or resource identifiers. Tests inject/mock the
 process runner; T15 does not run a query against a tenant.
+
+T16 adds a separate result-release boundary in `cases.py`:
+
+```python
+release_evidence(case_id, raw_result, policy, *, decision=None,
+                 allow_rules_only=False, directory=None) -> str | None
+read_evidence(case_id, evidence_id, directory=None) -> str
+```
+
+`release_evidence` requires an already-approved parent case, caps raw result input at
+1 MiB, sanitizes locally using the same stand-ins for values already mapped by that
+case, and renders the existing local checkpoint. This is a second approval, independent
+of query approval. A blocked result or rejected checkpoint creates no evidence or map
+file. Rules-only processing is refused unless explicitly opted into. On approval, only
+the sanitized text and opaque evidence ID are written as the MCP-readable evidence;
+the expanded reverse map is stored in a separate private sidecar. Raw Azure output is
+never persisted or logged. `read_evidence` revalidates both the parent case and evidence
+approval and returns only sanitized text. MCP exposes it as `read_evidence(case_id,
+evidence_id)`; the IDs are format-checked and no paths or real Azure identifiers are
+accepted. Local restore merges the case map with maps belonging to approved evidence.
+An orphan map from an interrupted write is ignored unless its evidence record exists
+and is approved.
+
+The MCP reader does not execute Azure queries or make approval decisions. The local
+supervisor calls `execute_query`, presents its raw local result to
+`release_evidence`, and only shares the returned evidence ID after a successful local
+release. Per-query approval and per-result release approval remain distinct. T16 tests
+the release/store/read boundary offline and does not query a live tenant.
 
 ```python
 create_case_scope(case_id, resource_ids, *, approve_scope, expires_in_minutes=...)

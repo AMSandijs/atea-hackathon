@@ -1,14 +1,14 @@
 # Build plan — Local AI Airlock
 
-## Implementation snapshot (25 Sep 2026)
+## Implementation snapshot (26 Sep 2026)
 
 The repository contains the T1-T9 modules and team-selected Copilot pilot
 (approved local cases, an MCP `read_case` tool, read-only single-resource Azure
 capture, and local restoration), plus T13's local typed planner, T14's private
-case scope/broker authorization gate, and T15's fixed read adapters. T15 returns
-raw results only to local code; results are not sanitized/released to MCP and do
-not yet iterate through Copilot. The test
-suite and invented-data evaluation should be rerun on each laptop; this snapshot
+case scope/broker authorization gate, T15's fixed read adapters, and T16's separate
+local result sanitizer/checkpoint with approved sanitized evidence available through
+MCP. The operator-side iterative query/release interaction and GUI are not yet built.
+The test suite and invented-data evaluation should be rerun on each laptop; this snapshot
 is not a claim that every original task acceptance criterion has been independently
 verified. T10's second-opinion pass, T11's paired Copilot answer-quality
 measurement, and T12's clipboard/UI extras are **not implemented**. The MCP
@@ -236,6 +236,29 @@ against a live Azure tenant in this task.
 - Tests mock the runner for every operation and prove rejection makes no process call;
   no live Azure request is made. `pytest`, `ruff check .`, and formatting for changed
   Python files pass. Stop after T15 and report.
+
+## T16 — Sanitize and separately approve Azure result release
+
+Implement the result-release boundary in `cases.py` and expose only its approved,
+sanitized output through a new read-only MCP `read_evidence(case_id, evidence_id)`
+tool. Require an approved parent case, cap input at 1 MiB, preserve existing case
+aliases, run the local sanitization pipeline, and require a distinct operator checkpoint
+after query approval. Rules-only release must be an explicit choice. Persist only
+approved sanitized evidence and its separate private reverse-map sidecar; never persist
+raw Azure results. Local restoration must use mappings from the case and its approved
+evidence. T16 remains offline/mocked and must not query a live tenant.
+
+**Done when:**
+- Missing/unapproved parent, oversized input, missing local model without explicit
+  rules-only mode, a block-tier finding, rejected approval, and checkpoint errors all
+  fail closed without an MCP-readable evidence record.
+- Approved evidence is returned by the MCP reader as sanitized text only. Invalid IDs,
+  corrupt/unapproved evidence, orphan mapping files, and unapproved parent cases are
+  rejected. The raw result and private mapping are absent from public evidence and MCP
+  output; restoration can resolve aliases introduced by released evidence.
+- Tests demonstrate query approval and result approval are separate; tests and `ruff
+  check .` pass, with changed Python files formatted. Do not run Azure against a tenant.
+  Stop after T16 and report.
 
 ---
 
