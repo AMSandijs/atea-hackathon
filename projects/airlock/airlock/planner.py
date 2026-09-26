@@ -17,6 +17,12 @@ QueryOperation = Literal["vm_cpu", "app_failures", "logic_runs", "sql_metrics", 
 _ALIAS = re.compile(r"[A-Z]{1,8}_[0-9]{1,6}\Z")
 _ALIAS_MENTION = re.compile(r"\b[A-Z]{1,8}_[0-9]{1,6}\b")
 _MAX_GOAL_CHARS = 2_000
+_DURATION = re.compile(
+    r"\b(?:(?P<count>\d{1,6})\s*|(?:an?|one|last|past)\s+)"
+    r"(?P<unit>minutes?|mins?|hours?|hrs?|days?)\b",
+    re.IGNORECASE,
+)
+_UNIT_MINUTES = {"m": 1, "h": 60, "d": 1_440}
 _MAX_TIME_RANGE_MINUTES = 1_440
 
 _SYSTEM = (
@@ -26,7 +32,8 @@ _SYSTEM = (
     "command, resource ID, URL, KQL, secret, or free-text explanation. Choose reject "
     "when the request is ambiguous, asks for a mutation, requests secrets or original "
     "names, or cannot be represented by one allowed read. On rejection set the target "
-    "to NONE and the time range to 1. The local broker will "
+    "to NONE and the time range to 1. Express the time range in minutes (1 hour = 60, "
+    "1 day = 1440); if the goal gives no time window, use 60 minutes. The local broker will "
     "independently validate every field; your proposal does not authorize execution."
 )
 
@@ -43,6 +50,16 @@ class QueryProposal(BaseModel):
 
 class PlannerError(RuntimeError):
     """The local planner could not produce a policy-valid proposal."""
+
+
+def _explicit_minutes(goal: str) -> int | None:
+    """The single duration a goal states, in minutes; None if absent or ambiguous."""
+
+    values = {
+        int(match.group("count") or 1) * _UNIT_MINUTES[match.group("unit")[0].lower()]
+        for match in _DURATION.finditer(goal)
+    }
+    return values.pop() if len(values) == 1 else None
 
 
 def _validate_capabilities(
@@ -125,6 +142,10 @@ def plan_query(
     if requested_alias not in capabilities:
         raise PlannerError("investigation goal names an alias outside the approved case scope")
 
+    explicit_minutes = _explicit_minutes(goal)
+    if explicit_minutes is not None and explicit_minutes > _MAX_TIME_RANGE_MINUTES:
+        raise PlannerError("investigation goal asks for more than the 24-hour read limit")
+
     endpoint = local_endpoint()
     if endpoint is None:
         raise PlannerError("local model is not configured")
@@ -162,4 +183,10 @@ def plan_query(
     proposal = validate_proposal(content, capabilities)
     if proposal.operation != "reject" and proposal.target_alias != requested_alias:
         raise PlannerError("local model changed the requested target alias")
+    if (
+        proposal.operation != "reject"
+        and explicit_minutes is not None
+        and proposal.time_range_minutes != explicit_minutes
+    ):
+        raise PlannerError("local model changed the requested time window")
     return proposal

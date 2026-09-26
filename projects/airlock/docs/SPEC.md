@@ -16,12 +16,27 @@ Detection has to run on the machine. That is not a preference, it is the definit
 This is why the project is local-AI rather than local-AI-flavoured, and it is the line
 the presentation opens with.
 
-## What it does
+## Product workflows
 
-Text goes in — a pasted payload, a file, a prompt. Every piece of customer-identifying
-material is found and replaced with a stand-in. Secrets are stopped rather than replaced.
-The sanitized text goes to whichever cloud model. The answer comes back full of
-stand-ins and is rebuilt locally with the real values.
+Airlock shares one local detection, classification, sanitization, approval, and restore
+core across two distinct cloud-assisted workflows. They are not interchangeable:
+
+1. **Standalone sanitized request:** the CLI accepts a prompt and optional file, shows a
+   checkpoint, sends only approved sanitized text through Airlock's configured gateway,
+   then restores known stand-ins in the response locally. `gateway.py` owns this outbound
+   request. If the gateway is not configured, the local echo is for offline testing only.
+2. **Azure investigation with Copilot:** the operator prepares an approved sanitized
+   case and private alias scope. Copilot reads approved context through the local MCP
+   server, requests bounded Azure reads, and reasons over released sanitized evidence.
+   The local planner proposes a typed read; the deterministic broker runs the fixed
+   adapter after local query approval. The result is sanitized and needs a second local
+   approval before MCP can return it. Copilot itself calls its cloud service; that
+   traffic is not sent through `gateway.py` and is not intercepted by Airlock.
+
+Secrets are blocked rather than replaced in either workflow. The answer or approved
+evidence can be restored locally using the private map. The sanitization boundary covers
+only data routed through Airlock; it cannot protect content sent through another enabled
+Copilot tool or pasted directly into a cloud prompt.
 
 ### Worked example
 
@@ -93,12 +108,13 @@ logged.
 
 Three ways in, one core:
 
-1. **CLI** — `airlock scan <file>` and `airlock ask <prompt> [--file ...]`. Build first;
-   it is the only one you cannot demo without.
-2. **Local MCP server** — tools the assistant calls on purpose. Legitimate integration
-   point, no interception.
-3. **Clipboard guard** — warns when sensitive text is copied and a browser AI tab takes
-   focus. Best demo moment, lowest priority to build.
+1. **CLI** — standalone `scan`/`ask` plus case, scope, capture, and one-turn investigation
+   commands. The exact command set is in `airlock --help`.
+2. **Local MCP server** — exposes approved sanitized case/evidence reads and the narrow
+   Copilot-to-GUI request/status handoff. It uses stdio and does not open a listener.
+3. **Local GUI** — supervises private scope creation, per-query approval, result review,
+   and Copilot-requested reads. This is a trusted local control surface, not a chat UI.
+4. **Clipboard guard** — an original stretch idea; not implemented.
 
 ## Copilot Azure investigation pilot
 
@@ -124,9 +140,11 @@ original names, command construction, scope enforcement, and output release. Mod
 proposals are untrusted even when they conform to a JSON schema. Raw Azure output stays
 local; secrets block release, and uncertain findings remain visible for operator review.
 
-The first build milestone implements and tests this planner contract offline. Azure
-adapters and Copilot's iterative MCP loop are separate later milestones, enabled only
-after their scope, sanitization, and approval tests pass.
+The T13–T20 milestones implement the typed planner, fixed read broker, separate result
+release, CLI/GUI supervision, and one-at-a-time Copilot-to-GUI handoff. The T21
+investigation evaluation is in progress. Automated Azure calls are mocked; live Copilot,
+live local-model planning, and live-tenant behavior remain unverified. See
+[`BUILD-PLAN.md`](BUILD-PLAN.md) and [`EVAL.md`](EVAL.md) for status and test boundaries.
 
 ## Why not what already exists
 
@@ -141,14 +159,20 @@ these products move.
 | Self-hosted model | Keeps everything in-tenant | Legitimate, different trade: gives up frontier capability for privacy. This keeps both. |
 | "No training on your data" terms | Contractual assurance | A paper control. The data still crossed the boundary, which is the objection. |
 
-The sentence to rehearse: *every existing control answers no, or answers trust us. This
-is the only one that transforms the payload so the answer can be yes — and here is
-exactly what left the machine.*
+Treat this as a positioning hypothesis, not a verified claim that no competing product
+does similar work. Before presenting comparisons, verify the current capabilities of the
+named products. A supportable project claim is narrower: *Airlock's goal is to show the
+approved sanitized evidence crossing its MCP boundary, while keeping the original map
+and raw Azure response local.*
 
-## Success criteria for the weekend
+## Original standalone-gateway success criteria
 
 - End-to-end path works: text in, checkpoint, cloud call, rebuilt answer out.
 - `block` tier genuinely aborts.
 - Eval produces four numbers: recall, precision, answer-quality delta, added latency.
 - Policy lives in readable YAML and can be shown on screen.
 - Demo runs from a recording, not live.
+
+The current Azure/Copilot pilot has additional milestone criteria in `BUILD-PLAN.md`;
+the original standalone-gateway criteria above do not demonstrate the Copilot
+investigation loop by themselves.

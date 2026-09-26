@@ -1,148 +1,101 @@
-# Atea Local AI Hackathon — team workspace
+# Local AI Airlock
 
-Shared folder for our hackathon team. Clone it, open the **root folder** in VS Code
-(not a subfolder — the AI instructions live at the root), and read this page.
+Local AI Airlock is a Windows-first prototype for investigating Azure alerts with a
+cloud reasoning assistant while keeping original resource identifiers and raw Azure
+responses on the operator's machine by design. Current evaluation has found identifier
+coverage gaps, so this is a prototype boundary—not a guarantee for arbitrary data. It is
+the selected project in this Atea local-AI hackathon workspace.
 
-**Kickoff Fri 25 Sep 14:00 CEST. Delivery Mon 28 Sep 08:00 CEST — 09:00 Riga time.**
+The Airlock is the controlled bridge: local models help interpret requests and inspect
+text, a deterministic broker runs a small set of fixed Azure reads, and a person approves
+both the query and any sanitized evidence released to GitHub Copilot.
 
-## What's in here
+## How an investigation works
 
-| Path | What it's for |
+1. The operator prepares an exported alert/snapshot locally and approves a sanitized case.
+   Real Azure resources are bound to private aliases such as `VM_1` in an approved scope.
+2. Copilot reads only the sanitized case through Airlock's local MCP server. It reasons
+   over aliases and asks for one bounded follow-up read at a time.
+3. A local model turns that alias-only goal into a typed proposal: an allowed operation,
+   approved alias, and bounded time range. It does **not** execute shell or Azure commands.
+4. Airlock's deterministic broker revalidates the proposal, resolves the real resource
+   ID locally, builds a fixed read-only Azure request, and runs it with the operator's
+   local Azure CLI identity. The local GUI asks the operator to approve the real target
+   and query first.
+5. The Azure result returns to Airlock, is sanitized locally, and is shown for a separate
+   release decision. Only approved sanitized evidence becomes readable to Copilot.
+   Copilot can reason over it and request another read; the loop repeats one turn at a
+   time. The final answer can be restored locally.
+
+The implemented read adapters cover VM CPU metrics, Application Insights failures,
+Logic App run summaries, and Azure SQL metrics. Query construction is fixed in code; the
+model cannot provide a command, URL, KQL, or mutation. The local model proposes what to
+read, but the broker—not the model—executes the Azure read. Current T21 results show
+App Insights and SQL reads fail to release because of sanitizer/vault defects; those
+paths are not demo-ready yet.
+
+## Safety boundary and current limits
+
+- Query approval and sanitized-result approval are separate, trusted-local GUI actions.
+- MCP exposes approved sanitized cases/evidence and a narrow request/status interface;
+  it does not expose arbitrary files, raw Azure results, the reverse map, or a restore tool.
+- The Copilot session must not also have direct Azure, portal/browser, terminal, or
+  workspace-file tools that can expose customer data. Airlock cannot sanitize data sent
+  through another tool or pasted directly into the prompt.
+- Raw Azure results and the original-to-alias map remain local. Protect Airlock's case
+  directory as customer data.
+- T21 evaluation has identified a privacy gap: a resource name detected inside an Azure
+  resource ID may remain unchanged when the same name appears separately in case prose.
+  Review [`projects/airlock/docs/T21-EVALUATION.md`](projects/airlock/docs/T21-EVALUATION.md)
+  and treat the current build as not ready for customer data.
+- The same evaluation found that the entropy detector blocks common long Azure resource
+  names. Until those findings are fixed, its demo guidance is limited to VM CPU and Logic
+  App reads with short resource names.
+- The Azure investigation path has offline tests with mocked Azure responses. A live
+  VS Code/Copilot session, a real local-model investigation, and live-tenant behavior are
+  not yet validated. Passing invented-data tests is not a privacy guarantee for arbitrary
+  customer environments.
+- Do not use production resources or real customer data for the hackathon demo. Follow
+  [`docs/GROUND-RULES.md`](docs/GROUND-RULES.md).
+
+## Run and test the project
+
+Requirements: Windows, Python 3.11+, and PowerShell. From the repository root:
+
+```powershell
+Set-Location .\projects\airlock
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\airlock.exe --help
+.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider --basetemp .pytest-tmp
+```
+
+For the desktop supervisor, start a compatible loopback model and configure
+`AIRLOCK_LOCAL_MODEL_URL` as described in the [Airlock local-model guide](projects/airlock/docs/LOCAL-AI-SETUP.md).
+From the repository root, run `.\projects\airlock\.venv\Scripts\airlock.exe gui`.
+For Copilot integration, open the repository root in VS Code,
+install Airlock's dependencies, configure the local model endpoint in the MCP server
+environment, and select the Airlock Investigator agent. The [Airlock README](projects/airlock/README.md)
+has the demo workflow and exact setup links.
+
+## Repository guide
+
+| Path | Purpose |
 |---|---|
-| `docs/HACKATHON.md` | The event: schedule, prize, what the organisers asked for, who's judging |
-| `docs/WORKING-WITH-AI.md` | **Read this one.** How to think *and* build with AI in this repo |
-| `docs/LOCAL-AI-SETUP.md` | Fresh-laptop setup, chat and coding instructions for local AI |
-| `docs/GROUND-RULES.md` | Data handling and demo safety. Short, non-negotiable |
-| `ideas/` | One-pager per idea. Template included. Add yours |
-| `projects/airlock/` | Working Airlock pilot, tests, invented-data evaluation, and design docs — our primary entry |
-| `projects/attachment-clerk/` | Build-ready spec for the Attachment Clerk — fallback / after |
-| `projects/local-ai-tools/` | Portable launcher and model settings for the team's coding assistant |
-| `DECISIONS.md` | What we chose and why, so we don't relitigate it on Saturday |
-| `scratch/` | Your own mess. Git-ignored |
+| [`projects/airlock/`](projects/airlock/README.md) | Selected project: CLI, local GUI, MCP server, Azure read broker, tests, and docs |
+| [`projects/airlock/docs/SPEC.md`](projects/airlock/docs/SPEC.md) | Product scope and security decisions |
+| [`projects/airlock/docs/ARCHITECTURE.md`](projects/airlock/docs/ARCHITECTURE.md) | Module boundaries, data contracts, and trust model |
+| [`projects/airlock/docs/BUILD-PLAN.md`](projects/airlock/docs/BUILD-PLAN.md) | Milestone status and acceptance criteria |
+| [`projects/airlock/docs/EVAL.md`](projects/airlock/docs/EVAL.md) | Seeded detector and investigation-loop evaluation |
+| [`projects/attachment-clerk/`](projects/attachment-clerk/README.md) | Separate, documented alternative; not the selected build |
+| [`ideas/`](ideas/README.md) | Original idea briefs and decision status |
+| [`DECISIONS.md`](DECISIONS.md) | Why Airlock was selected |
+| [`docs/GROUND-RULES.md`](docs/GROUND-RULES.md) | Data handling and demo rules |
+| [`docs/HACKATHON.md`](docs/HACKATHON.md) | Event schedule and judging context |
+| [`docs/WORKING-WITH-AI.md`](docs/WORKING-WITH-AI.md) | Guidance for reviewing ideas and implementing tasks with agents |
+| [`projects/local-ai-tools/README.md`](projects/local-ai-tools/README.md) | Local coding-assistant setup (Aider + LM Studio); separate from Airlock runtime |
 
-## First 10 minutes
-
-1. Open the root folder in VS Code.
-2. Read `docs/WORKING-WITH-AI.md`. It's short and it's the thing that makes the rest work.
-3. Skim `docs/HACKATHON.md` so you know what we're being judged on.
-4. To use the local coding assistant, follow the setup below.
-5. Look at `ideas/`. If you have one that isn't there, copy `ideas/_TEMPLATE.md` and
-   fill it in — it takes fifteen minutes and the template does the hard thinking for you.
-
-## Set up local AI on a Windows laptop
-
-LM Studio runs the model on your laptop. Aider connects to it in a terminal so
-you can ask questions, edit repo files, run checks and use Git. The setup below
-uses the **Qwen2.5-Coder-7B-Instruct Q4_K_M** model (about 4.7 GB). It was tested
-on one 32 GB RAM laptop; check your own machine before using the same model.
-The launcher requires at least 7 GB of free RAM before loading it.
-
-1. Install [VS Code](https://code.visualstudio.com/download),
-   [Git](https://git-scm.com/downloads/win),
-   [Python](https://www.python.org/downloads/windows/) and
-   [LM Studio](https://lmstudio.ai/download) through your organisation's
-   approved process. Open LM Studio once. In a new PowerShell terminal, check:
-
-   ```powershell
-   git --version
-   python --version
-   lms --help
-   ```
-
-2. Clone the repo and open its **root folder** in VS Code:
-
-   ```powershell
-   git clone https://github.com/AMSandijs/atea-hackathon.git
-   Set-Location .\atea-hackathon
-   code .
-   ```
-
-   If you already cloned it, go to its root and run `git pull --ff-only`
-   instead of cloning again. If `code .` is unavailable, use **File > Open
-   Folder** in VS Code.
-
-3. In LM Studio's **Discover** tab, download
-   `lmstudio-community/Qwen2.5-Coder-7B-Instruct-GGUF` and select the **Q4_K_M**
-   file. Confirm the publisher and file before downloading. In PowerShell, run
-   `lms ls` to check that `qwen2.5-coder-7b-instruct` is listed. Keep model
-   files outside the repo.
-
-4. Install Aider in its own tool environment, then reopen PowerShell:
-
-   ```powershell
-   python -m pip install aider-install
-   aider-install
-   aider --version
-   ```
-
-5. From the repo root, verify the local model and start Aider:
-
-   ```powershell
-   & .\projects\local-ai-tools\Start-LocalAI.ps1 -CheckOnly
-   & .\projects\local-ai-tools\Start-LocalAI.ps1
-   ```
-
-   The script loads the model, starts LM Studio's server on `127.0.0.1:1234`,
-   then opens Aider in this repo. If script execution is blocked, use the
-   [manual launch commands](docs/LOCAL-AI-SETUP.md#manual-launch-if-powershell-scripts-are-blocked)
-   or your organisation's approved way to run local scripts.
-
-### Talk to it and build with it
-
-- **Ordinary chat:** Open LM Studio's **Chat** tab, select the downloaded model,
-  and type a message. This is for conversation, not repo editing.
-- **Coding chat:** Type plain English at the Aider prompt. It already reads the
-  root `AGENTS.md` and `docs/GROUND-RULES.md`. Add the chosen project's rules
-  and plan as reference:
-
-  ```text
-  /read-only projects/airlock/AGENTS.md projects/airlock/docs/ARCHITECTURE.md projects/airlock/docs/BUILD-PLAN.md
-  What is the lowest-numbered unfinished task? Explain it before changing files.
-  ```
-
-  Before an edit, use `/add` followed by each existing file it may change.
-  Ask it to implement **one** build-plan task and run that task's tests. Use
-  `/diff` to review edits, `/git status --short` to inspect Git, and `/help`
-  for other Aider commands.
-- **Git:** Create a task branch, for example
-  `git switch -c local-ai/airlock-t9-alex` (replace the task and name). Review
-  `git diff`, run the project's tests and `git diff --check`, then stage only
-  intended files with `git add`. Commit and push the branch for team review:
-
-  ```powershell
-  git commit -m "Complete selected build task"
-  git push -u origin HEAD
-  ```
-
-  The launcher turns off Aider's automatic commits.
-
-Keep customer data and secrets out of prompts and files; use invented examples
-and mocks. The installed coding model is text-only, so screenshots and photos
-need a separate vision model. The [full setup guide](docs/LOCAL-AI-SETUP.md)
-has hardware checks, manual commands and troubleshooting details.
-
-## If you want to build rather than think
-
-Go to `projects/airlock/`, read its [README](projects/airlock/README.md) and
-`AGENTS.md`, then consult `docs/BUILD-PLAN.md`. The pilot already includes a
-local scan/prepare/restore CLI, a read-only Azure resource capture path, a
-sanitized-case MCP tool for Copilot, tests, and an invented-data 7B/14B
-comparison. The project README distinguishes tested functionality from demo
-steps that still need live validation. `attachment-clerk/` remains a separate
-fallback/after project.
-
-To use Airlock from this **root-folder** VS Code workspace, install its Python
-dependencies in `projects/airlock/.venv` as described in the project README.
-The root `.vscode/mcp.json` points Copilot to that interpreter. Select the
-**Airlock Investigator** custom agent and check its active tools before using
-an opaque, approved case ID. The local Aider coding assistant above is a
-separate workflow; its LM Studio launcher does not by itself sanitize Copilot
-traffic. Do not paste raw customer content into Copilot or enable direct
-Azure, workspace, or terminal tools for a customer investigation.
-
-## Have an idea of your own?
-
-Good — that's what this folder is for, and it is explicitly not too late. Write it up with
-the template, run the pressure-test prompt in `docs/WORKING-WITH-AI.md` against it, and
-put it in the channel. An idea that survives the four questions beats one that's just
-been around longer.
+For agent-assisted code changes, read the repository [`AGENTS.md`](AGENTS.md) and then
+the selected project's [`AGENTS.md`](projects/airlock/AGENTS.md). Work from its build
+plan one task at a time; keep all examples invented and all Azure tests mocked unless a
+separate, explicit test-tenant plan is approved.

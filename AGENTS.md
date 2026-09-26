@@ -26,7 +26,9 @@ something is worth building.
 **Building mode** — the user is implementing under `projects/`.
 
 - Read that project's `AGENTS.md` first. Its rules win over anything here.
-- One task at a time from its `docs/BUILD-PLAN.md`. Stop and report after each.
+- Work on one task explicitly marked active/next in its `docs/BUILD-PLAN.md`; don't
+  infer priority from task numbers when a plan has phases or deferred backlog. Stop and
+  report after each task.
 - Don't invent structure. The architecture doc specifies module names and signatures.
 
 ## Hard rules everywhere in this repo

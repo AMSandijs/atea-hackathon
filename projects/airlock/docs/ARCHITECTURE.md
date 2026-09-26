@@ -18,10 +18,10 @@ airlock/
   classify.py       Finding -> tier, using policy.yaml
   vault.py          Deterministic structure-preserving stand-ins + reverse lookup
   sanitize.py       Orchestrates detect -> classify -> swap
-  gateway.py        Sole outbound cloud-model request after sanitization
+  gateway.py        Standalone ask workflow: sends approved sanitized text to its cloud model
   rehydrate.py      Restores originals in the cloud answer; reports unmapped
   checkpoint.py     Renders the approval view, collects the decision
-  mcpserver.py      Stretch: local MCP server front door
+  mcpserver.py      Local stdio MCP front door: case/evidence readers, request/status tools
   clipboard.py      Stretch: clipboard guard
   cases.py          Local approved case store; only sanitized case text is readable by MCP
   azure.py          Read-only Azure CLI resource capture, with local identity
@@ -29,10 +29,12 @@ airlock/
   broker.py         Deterministic scope checks and fixed Azure read adapters
   investigation.py  One supervised query/sanitize/release turn; no MCP approval path
   gui.py            Single-user local desktop supervisor; no server or chat UI
+  handoff.py        Local file queue from MCP request to GUI supervisor; no listener
 eval/
   corpus/           Seeded fixtures (invented orgs, realistic shapes)
   seeds.yaml        Ground truth: what was planted where
   score.py          Computes the four numbers
+  investigations.py (T21) Replays invented incidents through the MCP-to-GUI loop; see EVAL.md
 tests/
 policy.yaml
 ```
@@ -81,7 +83,7 @@ implement, each with its own unit test:
 |---|---|
 | `AZURE_SUBSCRIPTION_ID` | GUID appearing after `/subscriptions/` or a `subscriptionId` key |
 | `AZURE_TENANT_ID` | GUID after `tenantId`, `/tenants/`, or in an authority URL |
-| `AZURE_RESOURCE_ID` | full `/subscriptions/.../resourceGroups/.../providers/...` path |
+| `AZURE_RESOURCE_ID` | full `/subscriptions/.../resourceGroups/.../providers/...` path, as type/name pairs; the match stops before a nested `/providers/` extension route (e.g. `.../providers/Microsoft.Insights/metrics/...`), which stays pass-through text (T22) |
 | `AZURE_RESOURCE_NAME` | the trailing name segments of a resource ID; also `name:` keys in ARM/Bicep |
 | `HOSTNAME` | FQDN, with `*.cloudapp.azure.com`, `*.azurewebsites.net` etc. treated as high confidence |
 | `PUBLIC_IP` | IPv4/IPv6 excluding RFC1918, loopback, link-local |
@@ -106,6 +108,14 @@ score Shannon entropy per token, flag tokens above a configurable threshold that
 longer than a configurable minimum and are not in an allowlist (known base64 of public
 data, git SHAs, etc.). Emits `SECRET_UNKNOWN` findings. Expect false positives; that is
 what the checkpoint is for.
+
+Naming-convention tokens are not unknown secrets (T22). A token is skipped when it has
+no uppercase letters, contains at least one `-` or `_` separator, and every segment is
+either letters only (up to 16), digits only (up to 4), or letters and digits of at most
+4 characters. This covers Azure resource names such as `kv-nordbro-shared-weu-001` and
+metric names such as `physical_data_read_percent`, while mixed-case, base64, hex, or
+long alphanumeric segments are still scored. Known secret formats are caught by the
+deterministic rules first, regardless of this skip.
 
 ### `detect/model.py`
 
@@ -253,7 +263,13 @@ Order matters:
    mapping empty. This check precedes the local prose model as well.
 6. Classify model findings, then deduplicate remaining overlaps — longest match wins,
    then highest score. A finding inside an `AZURE_RESOURCE_ID` is absorbed by it.
-7. Replace `swap` findings right-to-left by offset so earlier offsets stay valid.
+7. Generate stand-ins for the `swap` findings. Then find any other occurrence of an
+   original the vault already maps — including resource-group and resource names learned
+   from a resource ID in the same text, and a case's mapping preloaded when releasing
+   evidence — that is not already covered by a finding. Match case-insensitively, at
+   least 5 characters, not inside a longer `[\w-]` token. Add each as a `swap` finding
+   with detector `vault`, which reuses the same stand-in (T22).
+8. Replace `swap` findings right-to-left by offset so earlier offsets stay valid.
 
 ## Gateway (`gateway.py`)
 
@@ -273,7 +289,10 @@ file name, or any other unsanitized text to the request.
 
 `cases.py` prepares a local file with `sanitize`, an explicit checkpoint, and a random
 case ID. It persists the approved sanitized text and the reverse map locally. The MCP
-server exposes only approved sanitized case/evidence readers. It has no tool for
+server exposes approved sanitized case/evidence readers and, from T20, the
+`request_investigation`/`investigation_status` pair described under "Copilot-to-GUI
+request handoff", which only queue a typed proposal for local approval and report a
+status. It has no tool for
 preparing arbitrary input, reading arbitrary paths, or returning originals. The operator
 saves Copilot's answer to a local file and uses `airlock restore` to resolve stand-ins.
 The MCP server uses stdio and does not open a network port.
@@ -297,6 +316,12 @@ first implementation supports LM Studio's JSON Schema response format. The parse
 rejects malformed output, unknown fields, aliases outside the case scope, unsupported
 operation/alias combinations, and ranges outside the configured limit. A model response
 is a suggestion, never an authorization decision.
+
+Time windows (T22): the prompt tells the model to use 60 minutes when the goal gives no
+window. When the goal states exactly one explicit duration (`N minutes|hours|days`,
+including `an hour`/`a day`), the planner converts it to minutes deterministically; a
+proposal with a different range is rejected, and a stated duration above 1,440 minutes
+is rejected rather than silently clamped.
 
 The broker is the only component permitted to resolve aliases or invoke Azure reads.
 It rechecks the proposal against a private case scope and fixed service adapter, asks
@@ -400,8 +425,10 @@ metadata may enter the case audit record.
 
 ## Local supervised investigation turn (`investigation.py`, `cli.py`)
 
-T17 supplies a terminal supervisor for one proposal at a time. A Copilot-generated
-goal is manually copied to the local CLI and must name exactly one approved case alias.
+At milestone T17, the terminal supervisor handled one proposal at a time. A
+Copilot-generated goal was manually copied to the local CLI and had to name exactly one
+approved case alias. The later T20 handoff adds the MCP-to-GUI request queue; the CLI
+still supports manual one-turn use.
 The configured loopback planner proposes one operation/alias/time range; the CLI then
 shows the real ARM resource ID and exact query to the local operator. Only a local
 approval callback reaches `broker.execute_query`. The resulting raw response is passed
@@ -449,7 +476,7 @@ runs one supervised turn. Rules-only evidence release remains an explicit
 
 ## Local desktop supervisor (`gui.py`)
 
-T18 adds `airlock gui`, a single-user Tkinter desktop interface. It is a UI over the
+At milestone T18, `airlock gui` added a single-user Tkinter desktop interface. It is a UI over the
 existing `create_case_scope` and `run_investigation_turn` paths, not another execution
 or approval implementation. No HTTP listener or background network service is opened.
 The UI accepts an approved case ID, alias-to-resource scope entries, and an alias-only
@@ -465,10 +492,322 @@ To support that view, `release_evidence` accepts
 `approve_result(raw_result, sanitized) -> bool`; the release code enforces the block
 guard independently of the GUI callback and persists only after an explicit `True`.
 The GUI shows the opaque evidence ID after successful release; Copilot reads it through
-the existing MCP tool. The operator continues by pasting Copilot's next alias-only goal.
+the existing MCP tool. At T18, the operator pasted Copilot's next alias-only goal
+manually; the T20 request queue supersedes that handoff path when the GUI is running.
 No customer data or reverse mapping is logged or sent to the GUI over a network. Tests
 use mocked planner/Azure responses and exercise approval dispatch without requiring an
 interactive desktop or live Azure tenant.
+
+## Copilot-to-GUI request handoff (T19 decision; implemented in T20)
+
+T19 recorded the transport and safety contract; T20 implements it. The queue replaces
+manual goal transfer in the GUI workflow with a Copilot-initiated request while keeping
+every Azure query and evidence-release approval in the local GUI. The CLI and GUI manual
+paste path remain available. The dated T19/T20 criteria and current T21 evaluation work
+are in [`MCP-LOOP-IMPLEMENTATION-PLAN.md`](MCP-LOOP-IMPLEMENTATION-PLAN.md).
+
+### Transport decision
+
+A per-user **file queue** under the existing private case area:
+`case_directory() / "requests"` (default `~/.airlock/cases/requests`). No TCP/HTTP
+listener, named-pipe server, or other IPC endpoint is added. The stdio MCP process
+(spawned by VS Code per window; several may run) is the only creator of new records.
+The GUI is the only claimer and, after claiming, the only writer of that record.
+
+Rejected alternatives:
+
+- *Loopback HTTP/socket* — adds a listener any local process can reach; forbidden by
+  the `AGENTS.md` non-goals.
+- *MCP elicitation for approval* — the installed MCP SDK (2.2) supports it, but the
+  approval prompt would render in the Copilot host and carry the real resource ID over
+  the MCP channel. Whether that content stays out of model context is host behaviour we
+  cannot verify, and it would move approval authority out of Airlock's trusted UI.
+
+Directory and permission assumptions (checked on the target Windows 11/NTFS laptop in
+T19; see "T19 verification"):
+
+- The queue root must be on a local fixed drive. T20 refuses to use the queue (MCP
+  returns `supervisor_unavailable`; the GUI shows an error) when the root is a
+  UNC/network path, is not `DRIVE_FIXED`, or is inside a folder named by the `OneDrive`,
+  `OneDriveCommercial`, or `OneDriveConsumer` environment variables. `AIRLOCK_CASE_DIR`
+  overrides are subject to the same check. The MCP server and GUI must resolve the same
+  root; a mismatch means no request is ever claimed (it fails closed and expires).
+- Access control is the inherited NTFS ACL of the user profile (SYSTEM,
+  Administrators, the user). `os.chmod(0o700)` in the existing code does not set
+  Windows ACLs and is not relied on. As with the scope file, the queue is not a defence
+  against malicious code running as the same user; the OS account is in the trust base.
+- The queue holds no customer data: only IDs, an alias-level typed proposal, status,
+  and timestamps. A leaked record reveals an opaque case ID and an alias.
+
+### Record schema
+
+One JSON file per request, `requests/<case_id>.req-<request_id>.json`, UTF-8, at most
+4 KiB, exact key set (unknown or missing keys invalidate the record):
+
+```json
+{
+  "version": 1,
+  "case_id": "<24 hex>",
+  "request_id": "<24 hex, secrets.token_hex(12)>",
+  "status": "queued",
+  "proposal": {"operation": "vm_cpu", "target_alias": "VM_1", "time_range_minutes": 30},
+  "created_at": "2026-09-26T12:00:00Z",
+  "claim_by": "2026-09-26T12:05:00Z",
+  "deadline_at": "2026-09-26T12:30:00Z",
+  "evidence_id": null
+}
+```
+
+`proposal` is validated with the existing strict `QueryProposal`; `reject` proposals are
+never queued. `case_id`/`request_id` in the file must equal those in the file name and
+in the caller's arguments, so a record copied or renamed to another case is invalid.
+Timestamps are UTC with a `Z` suffix and must satisfy `created_at < claim_by <=
+deadline_at`. `evidence_id` is non-null exactly when `status == "released"`. The record
+never holds the Copilot goal text, real resource IDs, raw Azure output, sanitized
+evidence text, findings, reverse maps, exception text, or approval decisions.
+
+Every reader treats every record as untrusted: IDs are regex-checked before any path is
+built, the file is read with a size cap, and any validation failure means "not found".
+
+### Atomicity and ownership
+
+- **Enqueue (MCP):** write a unique hidden temp file with `open("xb")` + `fsync`, then
+  `os.link(temp, final)` — atomic, and never overwrites an existing record on NTFS or
+  POSIX — then delete the temp file.
+- **Claim (GUI):** create `requests/<case_id>.req-<request_id>.claim` with `open("xb")`.
+  Exactly one creator succeeds across processes. The marker is never removed while the
+  record exists, so a request ID is single-use even if its record is rewritten to
+  `queued`. The GUI also keeps an in-memory set of consumed request IDs.
+- **Update (GUI owner only):** write a temp file and `os.replace` it over the record.
+  On Windows, `os.replace` fails with `PermissionError` while a reader has the file
+  open; the owner retries briefly (about 250 ms) and otherwise treats the transition as
+  failed (fail closed). Readers likewise retry a sharing violation briefly; if it
+  persists, MCP reports the retryable `unavailable` status, never a guessed state.
+
+### State machine
+
+```text
+queued -claim-> claimed -> awaiting_query_approval -> running -> awaiting_result_review -> released
+```
+
+| From | Allowed next states |
+|---|---|
+| `queued` | `claimed` (GUI claim only) |
+| `claimed` | `awaiting_query_approval`, `rejected`, `failed`, `cancelled`, `expired` |
+| `awaiting_query_approval` | `running`, `denied`, `rejected`, `failed`, `cancelled`, `expired` |
+| `running` | `awaiting_result_review`, `blocked`, `failed`, `cancelled`, `expired` |
+| `awaiting_result_review` | `released`, `denied`, `blocked`, `failed`, `cancelled`, `expired` |
+
+Terminal states (`released`, `denied`, `rejected`, `blocked`, `failed`, `expired`,
+`cancelled`) are immutable; the owner refuses any transition out of them. Meanings:
+`rejected` = broker revalidation failed after claim, or a duplicate for the same case;
+`denied` = the operator refused the query or the result; `blocked` = block-tier
+finding; `failed` = Azure/sanitizer/queue error; `cancelled` = GUI closed or operator
+dismissed the request.
+
+**Expiry is derived by every reader**, so a crashed GUI never leaves a live-looking
+request: a `queued` record at or after `claim_by`, or any non-terminal record at or
+after `deadline_at`, reads as `expired`. The GUI never claims an expired record and
+checks `deadline_at` again immediately before calling `release_evidence`; past the
+deadline it records `expired` and releases nothing, even if the Azure read completed.
+
+Defaults (`policy.yaml` under `investigation:`, validated by `config.py`):
+`request_claim_seconds: 300` (allowed 30–900) and `request_deadline_minutes: 30`
+(allowed 5–60). `claim_by` is capped at `deadline_at`. The queue does not read the
+private scope to clamp the deadline; the broker's own scope-expiry check at execution
+time already rejects a read after the scope expires.
+
+### Duplicates, replay, restart, shutdown
+
+- **One in flight.** The GUI owns at most one non-terminal request at a time.
+- **Per-case duplicates.** Before enqueueing, MCP scans the case's records; if one is
+  effectively active it returns `busy` with that request ID instead of queueing, so a
+  retried MCP call can recover the ID. Two MCP processes can still race past this
+  best-effort check; the GUI claim is authoritative: it claims the oldest queued request
+  for a case and claims-then-marks any other queued request for that case `rejected`,
+  with no Azure read.
+- **Replay.** The claim marker makes each request ID single-use. A supervisor claims
+  only records whose `created_at` is at or after its own start time, so a request left
+  from an earlier GUI session (or re-injected after restart) is never executed; it
+  expires.
+- **GUI absent or restarted.** Nothing claims the request; it reads `expired` after
+  `claim_by`. Absence never approves.
+- **GUI close.** Pending approvals are rejected by the existing `ApprovalBridge`; the
+  owner marks its in-flight request `cancelled`. A read that was already approved may
+  finish locally, but its result is not released.
+- **Cleanup.** On start and every 10 minutes, the GUI deletes any record (and its claim
+  marker) whose `deadline_at` passed more than 24 hours ago; since every request is
+  terminal or effectively `expired` by its deadline, this covers all finished requests.
+  Unreadable records and orphan claim markers are deleted once their file is more than
+  24 hours old; temp files once they are more than one hour old.
+
+### MCP tool contract
+
+```text
+request_investigation(case_id: str, goal: str)
+  -> {"status": "queued", "request_id": "<24 hex>"}
+   | {"status": "busy", "request_id": "<24 hex>"}
+   | {"status": "proposal_rejected"}
+   | {"status": "supervisor_unavailable"}
+
+investigation_status(case_id: str, request_id: str)
+  -> {"status": "<any state above>"}
+   | {"status": "released", "evidence_id": "<24 hex>"}
+   | {"status": "unavailable"}      # transient sharing violation; poll again
+   | {"status": "unknown"}          # invalid, missing, malformed, or cross-case
+
+read_evidence(case_id: str, evidence_id: str) -> str     # unchanged (T16)
+```
+
+`request_investigation` checks the `case_id` format and approval (`read_case`), bounds
+the goal (the existing 2,000-character planner limit), calls `plan_investigation`, and
+queues only a non-`reject` proposal. Every planner, broker, scope, or validation error
+maps to `proposal_rejected`; queue-root failure maps to `supervisor_unavailable`. The
+goal is used in memory for the loopback planner call and is never persisted or logged.
+The response never contains the proposal, alias, resource ID, or exception text.
+`case_capabilities()` reads the private scope file inside the MCP process but returns
+only aliases and operations; real IDs are never serialized from that process. The MCP
+process needs `AIRLOCK_LOCAL_MODEL_URL` (a loopback URL, not a secret) in its
+environment, supplied through the `env` block of `.vscode/mcp.json`; without it every
+request is `proposal_rejected`.
+
+`investigation_status` is read-only: repeated polling never changes a record or causes
+work. Only `investigation_status` exposes an evidence ID, and `read_evidence`
+independently revalidates the case and evidence approval as it does today.
+
+### Planning/execution split (`investigation.py`)
+
+```python
+def plan_investigation(
+    case_id: str,
+    goal: str,
+    policy: Policy,
+    directory: Path | None = None,
+) -> QueryProposal
+```
+
+Loads `case_capabilities(case_id, directory)` and returns `plan_query(goal, ...)`.
+It may return an `operation == "reject"` proposal; it raises `PlannerError` or
+`BrokerError` for invalid input, a missing model, or unavailable scope. It never calls
+Azure or the broker's authorization path.
+
+```python
+def run_investigation_proposal(
+    case_id: str,
+    proposal: QueryProposal,
+    policy: Policy,
+    *,
+    approve_query: Callable[[QueryReview], bool] | None,
+    result_decision: bool | None = None,
+    approve_result: Callable[[str, Sanitized], bool] | None = None,
+    allow_rules_only: bool = False,
+    directory: Path | None = None,
+) -> InvestigationTurn
+```
+
+Treats `proposal` as untrusted even when it came from a validated queue record: a
+`reject` proposal returns `proposal_rejected`; otherwise it calls `execute_query`
+(which reloads case, scope, expiry, alias, operation and range, and requires the local
+query approval) and then `release_evidence` with the independent result approval.
+It returns the existing `InvestigationTurn` statuses.
+
+`run_investigation_turn(...)` keeps its signature and behaviour and becomes
+`run_investigation_proposal(case_id, plan_investigation(case_id, goal, policy,
+directory), policy, ...)`. The CLI and the GUI's manual-paste path keep using it.
+
+### Queue API (`handoff.py`)
+
+```python
+class HandoffError(RuntimeError): ...
+
+@dataclass(frozen=True)
+class HandoffRecord:
+    case_id: str
+    request_id: str
+    status: str
+    proposal: QueryProposal
+    created_at: datetime
+    claim_by: datetime
+    deadline_at: datetime
+    evidence_id: str | None
+
+def queue_directory(directory: Path | None = None) -> Path   # locality-checked, created
+def enqueue_request(case_id, proposal, *, claim_seconds, deadline_minutes,
+                    directory=None, now=None) -> tuple[Literal["queued", "busy"], str]
+def request_status(case_id, request_id, directory=None, now=None) -> dict[str, str]
+def cleanup_requests(directory=None, now=None) -> int
+
+class RequestSupervisor:                  # GUI side; thread-safe
+    def __init__(self, directory=None, started_at=None) -> None
+    def claim_next(self, case_id: str, now=None) -> HandoffRecord | None
+    def transition(self, request_id, status, *, evidence_id=None) -> HandoffRecord
+    def shutdown(self) -> None             # owned in-flight requests -> cancelled
+```
+
+`directory` is the case directory, as elsewhere; the queue lives in its `requests`
+subfolder.
+
+### GUI queue consumer (`investigation.run_queued_request`, `gui.py`)
+
+```python
+def run_queued_request(
+    supervisor: RequestSupervisor,
+    record: HandoffRecord,
+    policy: Policy,
+    *,
+    approve_query: Callable[[QueryReview], bool],
+    approve_result: Callable[[str, Sanitized], bool],
+    allow_rules_only: bool = False,
+    directory: Path | None = None,
+) -> str   # the terminal status written
+```
+
+This headless helper holds all queue-consumer logic so it is testable without Tk. It
+wraps the two approval callbacks: the query wrapper writes `awaiting_query_approval`,
+asks the operator, and writes `running` only after an explicit `True` within the
+deadline; the result wrapper writes `awaiting_result_review`, refuses (returns `False`)
+if `deadline_at` has passed, and remembers whether the sanitized result was blocked.
+Any queue-write failure inside a wrapper raises, which the broker/release code already
+treats as a denial. It then calls `run_investigation_proposal` and writes exactly one
+terminal state. It never raises.
+
+Turn-to-queue mapping: `proposal_rejected`, or a `BrokerError` raised before the query
+approval callback ran → `rejected`; `query_denied` → `denied`; `result_not_released` →
+`blocked` if the result had block-tier findings, `expired` if refused for the deadline,
+else `denied`; `released` → `released`; any other exception (including an Azure failure
+after approval) → `failed`. If the record is already terminal (for example, `cancelled`
+by shutdown), the final write is skipped.
+
+The GUI polls the queue on its existing `after()` loop (about once per second) only
+while an approved case with active scope is loaded and no turn is running, and claims
+only requests for that loaded case; other cases' requests are left to expire. It runs
+`run_queued_request` in the existing worker thread with the existing `ApprovalBridge`
+callbacks, so the query and result dialogs are unchanged. The status line marks the turn
+as Copilot-initiated. Window close calls `RequestSupervisor.shutdown()` in addition to
+`ApprovalBridge.close()`. The GUI runs `cleanup_requests` at start and every 10 minutes.
+
+### T19 verification
+
+An offline spike (`spikes/t19_handoff/`, outside the package and the default pytest
+run) implemented the enqueue/claim/update/status mechanics above against the real
+`QueryProposal`, without importing the broker or Azure modules. On Windows 11/NTFS it
+showed:
+
+- enqueue is atomic and never overwrites;
+- exactly one of six concurrent supervisor processes wins a claim;
+- malformed, oversized, cross-case, rebound, expired, duplicate, pre-restart, and
+  replayed records are never claimed, and read as `unknown`/`expired`/`rejected`;
+- illegal and post-terminal transitions are refused;
+- `os.replace` raises the expected sharing violation while a reader holds the file,
+  and the owner's retry succeeds once the handle is released;
+- concurrent status polling during owner writes never observed a partial or invalid
+  state.
+
+A new folder under the user profile inherited an ACL granting only SYSTEM,
+Administrators, and the user. Not exercised by the spike: cleanup, the policy-driven
+expiry settings, the reader's `unavailable` fallback after exhausted retries, the
+`DRIVE_FIXED` check against a real removable/network drive, and any interaction with
+the real MCP host or GUI.
 
 ## Re-hydration (`rehydrate.py`)
 

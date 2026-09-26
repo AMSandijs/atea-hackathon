@@ -73,8 +73,9 @@ invented API signatures, and any latency or accuracy number it didn't measure.
 Under `projects/<name>/`. The pattern:
 
 1. *"Read AGENTS.md and docs/ARCHITECTURE.md in this project."*
-2. *"Do the lowest-numbered unfinished task in docs/BUILD-PLAN.md. Just that one. Stop
-   and report when its acceptance criteria pass."*
+2. *"Do the task explicitly marked active/next in docs/BUILD-PLAN.md. Don't infer
+   priority from numbering when the plan has phases or deferred work. Just that one;
+   stop and report when its acceptance criteria pass."*
 3. Read what it did. Run the tests yourself. Then ask for the next one.
 
 **Do not let it chain tasks.** An agent that does T4 through T8 in one go produces a lot

@@ -12,6 +12,8 @@ _TOKEN = re.compile(r"(?<![A-Za-z0-9])[A-Za-z0-9][A-Za-z0-9+_-]{2,}(?![A-Za-z0-9
 _UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
 _SHA = re.compile(r"^[0-9a-f]{40,64}$", re.IGNORECASE)
 _ALLOWLIST = {"authorization", "application", "configuration", "documentation"}
+_SEPARATOR = re.compile(r"[-_]")
+_NAME_SEGMENT = re.compile(r"[a-z]{1,16}|[0-9]{1,4}|[a-z0-9]{1,4}")
 
 
 def shannon_entropy(value: str) -> float:
@@ -23,9 +25,23 @@ def shannon_entropy(value: str) -> float:
     return -sum((count / len(value)) * math.log2(count / len(value)) for count in counts.values())
 
 
+def _is_naming_convention(value: str) -> bool:
+    """Lowercase, separator-delimited words and short counters, e.g. kv-app-weu-001."""
+
+    if value != value.lower() or not _SEPARATOR.search(value):
+        return False
+    segments = _SEPARATOR.split(value)
+    return all(segment and _NAME_SEGMENT.fullmatch(segment) for segment in segments)
+
+
 def _is_allowed(value: str) -> bool:
     lowered = value.lower()
-    return lowered in _ALLOWLIST or bool(_UUID.fullmatch(lowered)) or bool(_SHA.fullmatch(lowered))
+    return (
+        lowered in _ALLOWLIST
+        or bool(_UUID.fullmatch(lowered))
+        or bool(_SHA.fullmatch(lowered))
+        or _is_naming_convention(value)
+    )
 
 
 def detect(text: str, policy: Policy) -> list[Finding]:

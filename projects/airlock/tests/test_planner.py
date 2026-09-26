@@ -131,3 +131,58 @@ def test_plan_query_hides_transport_error_details(monkeypatch: pytest.MonkeyPatc
     with pytest.raises(PlannerError, match="no Azure query was issued") as error:
         plan_query("Check CPU for VM_1", CAPABILITIES, load_policy())
     assert "request details" not in str(error.value)
+
+
+def _model_reply(monkeypatch: pytest.MonkeyPatch, minutes: int, seen: dict | None = None) -> None:
+    def fake_post(url: str, **kwargs: Any) -> httpx.Response:
+        if seen is not None:
+            seen.update(kwargs)
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": _proposal(minutes=minutes)}}]},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(
+        "airlock.planner.local_endpoint", lambda: "http://127.0.0.1:1234/v1/chat/completions"
+    )
+    monkeypatch.setattr("airlock.planner.httpx.post", fake_post)
+
+
+@pytest.mark.parametrize(
+    ("goal", "minutes"),
+    [
+        ("Check VM_1 CPU over the last 2 hours", 120),
+        ("Check VM_1 CPU for the last hour", 60),
+        ("Check VM_1 CPU for 45 minutes", 45),
+        ("Check VM_1 CPU for the last day", 1440),
+    ],
+)
+def test_explicit_duration_must_match_the_proposal(
+    monkeypatch: pytest.MonkeyPatch, goal: str, minutes: int
+) -> None:
+    _model_reply(monkeypatch, minutes)
+    assert plan_query(goal, CAPABILITIES, load_policy()).time_range_minutes == minutes
+    _model_reply(monkeypatch, 168)
+    with pytest.raises(PlannerError):
+        plan_query(goal, CAPABILITIES, load_policy())
+
+
+def test_explicit_duration_above_limit_is_rejected_before_the_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "airlock.planner.local_endpoint", lambda: "http://127.0.0.1:1234/v1/chat/completions"
+    )
+    monkeypatch.setattr(
+        "airlock.planner.httpx.post", lambda *_a, **_k: pytest.fail("model must not be called")
+    )
+    with pytest.raises(PlannerError):
+        plan_query("Show VM_1 CPU for the last 3 days", CAPABILITIES, load_policy())
+
+
+def test_prompt_sets_a_default_window_when_none_is_given(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict = {}
+    _model_reply(monkeypatch, 60, seen)
+    plan_query("Check VM_1 CPU", CAPABILITIES, load_policy())
+    assert "60 minutes" in seen["json"]["messages"][0]["content"]

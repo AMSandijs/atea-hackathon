@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import queue
 import threading
+import time
 import tkinter as tk
 from dataclasses import dataclass, field
 from tkinter import messagebox, ttk
@@ -12,11 +13,14 @@ from typing import Literal
 from .broker import BrokerError, QueryReview, case_capabilities
 from .cases import case_directory, read_case
 from .config import load_policy
-from .investigation import InvestigationTurn, run_investigation_turn
+from .handoff import HandoffError, HandoffRecord, RequestSupervisor, cleanup_requests
+from .investigation import InvestigationTurn, run_investigation_turn, run_queued_request
 from .models import Sanitized
 from .scope import ScopeReview, create_case_scope
 
 _ApprovalKind = Literal["query", "result"]
+_REQUEST_CHECK_SECONDS = 1.0
+_CLEANUP_SECONDS = 600.0
 
 
 @dataclass
@@ -122,8 +126,19 @@ class AirlockDesktop:
         self._closing = False
         self._loaded_case_id: str | None = None
         self._active_aliases: tuple[str, ...] = ()
+        self.supervisor: RequestSupervisor | None = None
+        self._queue_note = ""
+        try:
+            self.supervisor = RequestSupervisor()
+            cleanup_requests()
+        except (HandoffError, OSError):
+            self._queue_note = "Copilot requests are disabled: the case folder is not local."
+        self._next_request_check = 0.0
+        self._next_cleanup = time.monotonic() + _CLEANUP_SECONDS
 
         self._build()
+        if self._queue_note:
+            self.status_var.set(self._queue_note)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.root.after(60, self._poll)
 
@@ -368,6 +383,75 @@ class AirlockDesktop:
         except Exception as exc:  # noqa: BLE001 — surface worker failures and keep the UI fail-closed.
             self._events.put(("error", str(exc)))
 
+    def _check_copilot_requests(self) -> None:
+        """Claim one Copilot request for the loaded, scoped case and supervise it."""
+
+        if self._busy or self._closing or self.supervisor is None:
+            return
+        case_id = self._loaded_case_id
+        if case_id is None or not self._active_aliases:
+            return
+        try:
+            record = self.supervisor.claim_next(case_id)
+        except (HandoffError, OSError):
+            return
+        if record is None:
+            return
+        self._busy = True
+        self.run_button.configure(state="disabled")
+        self.status_var.set(
+            f"Copilot requested {record.proposal.operation} on "
+            f"{record.proposal.target_alias}; checking scope before local approval…"
+        )
+        worker = threading.Thread(
+            target=self._run_queued_worker,
+            args=(record, self.rules_only_var.get()),
+            name="airlock-copilot-request",
+            daemon=True,
+        )
+        worker.start()
+
+    def _run_queued_worker(self, record: HandoffRecord, rules_only: bool) -> None:
+        supervisor = self.supervisor
+        if supervisor is None:
+            return
+        try:
+            policy = load_policy()
+        except Exception:  # noqa: BLE001 — a policy failure must not leave the request open.
+            supervisor.shutdown()
+            self._events.put(("queued", ("failed", record.request_id)))
+            return
+        status = run_queued_request(
+            supervisor,
+            record,
+            policy,
+            approve_query=self.bridge.approve_query,
+            approve_result=self.bridge.approve_result,
+            allow_rules_only=rules_only,
+        )
+        self._events.put(("queued", (status, record.request_id)))
+
+    def _finish_queued(self, payload: object) -> None:
+        self._busy = False
+        self.run_button.configure(state="normal" if self._active_aliases else "disabled")
+        status, request_id = payload if isinstance(payload, tuple) else ("failed", "")
+        if status == "released" and self.supervisor is not None:
+            current = self.supervisor.current(request_id)
+            if current is not None and current.evidence_id is not None:
+                self.evidence_var.set(current.evidence_id)
+                self.copy_button.configure(state="normal")
+        explanations = {
+            "released": "Copilot request: evidence released; Copilot can now read it.",
+            "denied": "Copilot request: denied locally; no evidence was released.",
+            "rejected": "Copilot request: rejected by the scope check; no Azure read ran.",
+            "blocked": "Copilot request: blocked secret found; rotate it. Nothing released.",
+            "expired": "Copilot request: expired; no evidence was released.",
+            "cancelled": "Copilot request: cancelled; no evidence was released.",
+        }
+        self.status_var.set(
+            explanations.get(status, "Copilot request: failed; no evidence was released.")
+        )
+
     def _poll(self) -> None:
         self.bridge.drain(self._present_approval)
         while True:
@@ -377,6 +461,8 @@ class AirlockDesktop:
                 break
             if event == "turn":
                 self._finish_turn(payload)
+            elif event == "queued":
+                self._finish_queued(payload)
             elif event == "error":
                 self._busy = False
                 self.run_button.configure(state="normal" if self._active_aliases else "disabled")
@@ -386,6 +472,16 @@ class AirlockDesktop:
         if self._closing and not self._busy:
             self.root.destroy()
             return
+        now = time.monotonic()
+        if now >= self._next_request_check:
+            self._next_request_check = now + _REQUEST_CHECK_SECONDS
+            self._check_copilot_requests()
+        if now >= self._next_cleanup:
+            self._next_cleanup = now + _CLEANUP_SECONDS
+            try:
+                cleanup_requests()
+            except OSError:
+                pass
         self.root.after(60, self._poll)
 
     def _present_approval(self, request: _PendingApproval) -> bool:
@@ -544,6 +640,8 @@ class AirlockDesktop:
                 return
             self._closing = True
             self.bridge.close()
+            if self.supervisor is not None:
+                self.supervisor.shutdown()
             self.run_button.configure(state="disabled")
             self.status_var.set(
                 "Closing after pending local work stops; no further results will be released."
@@ -551,6 +649,8 @@ class AirlockDesktop:
             return
         self._closing = True
         self.bridge.close()
+        if self.supervisor is not None:
+            self.supervisor.shutdown()
         self.root.destroy()
 
     def _show_error(self, title: str, message: str) -> None:

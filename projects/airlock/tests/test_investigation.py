@@ -11,6 +11,7 @@ from mcp import Client
 from typer.testing import CliRunner
 
 from airlock import azure, investigation
+from airlock.broker import BrokerError
 from airlock.cases import prepare_case, read_evidence
 from airlock.cli import app
 from airlock.config import load_policy
@@ -225,3 +226,76 @@ def test_cli_scope_rejection_persists_nothing(
     )
     assert result.exit_code == 2
     assert not (tmp_path / f"{case_id}.scope.json").exists()
+
+
+def test_plan_investigation_uses_only_case_capabilities_and_never_reads_azure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case_id = _case_with_scope(tmp_path)
+    seen: list[tuple[str, dict[str, tuple[str, ...]]]] = []
+
+    def fake_plan(goal: str, capabilities: dict[str, tuple[str, ...]], _policy: object):
+        seen.append((goal, dict(capabilities)))
+        return _proposal()
+
+    monkeypatch.setattr(investigation, "plan_query", fake_plan)
+    monkeypatch.setattr(
+        azure, "_execute_authorized_read", lambda _: pytest.fail("planning must not read Azure")
+    )
+
+    proposal = investigation.plan_investigation(
+        case_id, "Inspect VM_1 CPU", load_policy(), directory=tmp_path
+    )
+
+    assert proposal == _proposal()
+    assert seen == [("Inspect VM_1 CPU", {"VM_1": ("vm_cpu",)})]
+    assert CASE_RESOURCE not in repr(seen)
+
+
+def test_run_investigation_proposal_revalidates_untrusted_proposal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case_id = _case_with_scope(tmp_path)
+    calls: list[object] = []
+    monkeypatch.setattr(
+        azure, "_execute_authorized_read", lambda read: calls.append(read) or RAW_RESULT
+    )
+    forged = QueryProposal.model_construct(
+        operation="vm_cpu", target_alias="VM_9", time_range_minutes=60
+    )
+
+    with pytest.raises(BrokerError):
+        investigation.run_investigation_proposal(
+            case_id,
+            forged,
+            load_policy(),
+            approve_query=lambda _: True,
+            result_decision=True,
+            allow_rules_only=True,
+            directory=tmp_path,
+        )
+    assert calls == []
+
+
+def test_run_investigation_proposal_releases_one_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case_id = _case_with_scope(tmp_path)
+    monkeypatch.delenv("AIRLOCK_LOCAL_MODEL_URL", raising=False)
+    calls: list[object] = []
+    monkeypatch.setattr(
+        azure, "_execute_authorized_read", lambda read: calls.append(read) or RAW_RESULT
+    )
+
+    turn = investigation.run_investigation_proposal(
+        case_id,
+        _proposal(),
+        load_policy(),
+        approve_query=lambda _: True,
+        result_decision=True,
+        allow_rules_only=True,
+        directory=tmp_path,
+    )
+
+    assert turn.status == "released"
+    assert len(calls) == 1

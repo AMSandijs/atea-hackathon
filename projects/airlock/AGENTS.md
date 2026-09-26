@@ -6,7 +6,10 @@ Rules for GitHub Copilot, Claude Code, or any other AI agent working in this rep
 
 1. Read `docs/SPEC.md` — what this is and why.
 2. Read `docs/ARCHITECTURE.md` — the contracts you must implement against.
-3. Open `docs/BUILD-PLAN.md` and find the **lowest-numbered unfinished task**.
+3. Open `docs/BUILD-PLAN.md` and find the milestone explicitly marked active/next.
+   The current active work is T21. T10–T12 are deferred items from the original
+   standalone-gateway plan; they are not prerequisites for T21 or the current Azure
+   investigation pilot unless the user re-prioritizes them.
 
 ## How to work
 
@@ -24,10 +27,12 @@ Rules for GitHub Copilot, Claude Code, or any other AI agent working in this rep
 - **Deterministic before model.** If a value can be found with a regex, a format check,
   a checksum or an entropy test, it is found that way. The local model is only invoked
   on free prose that rules cannot cover. Violating this makes the tool too slow to use.
-- **Customer data may reach the cloud model only through a reviewed Airlock release.**
-  `gateway.py` is the sole outbound model request. `azure.py` makes read-only requests
-  to the customer's Azure tenant using the operator's local identity, then returns the
-  response to the local sanitizer. The local prose model may use loopback only.
+- **Customer data may reach a cloud model only as an approved Airlock release.** The
+  standalone `ask` workflow sends only the reviewed sanitized text through `gateway.py`.
+  In the Copilot investigation workflow, the MCP server returns only approved sanitized
+  cases/evidence; Copilot's host performs its own cloud call, outside Airlock's gateway.
+  `azure.py` makes read-only requests using the operator's local identity and returns
+  results to the local sanitizer. The local planner/prose model may use loopback only.
 - **Copilot can read approved sanitized cases only.** The MCP server must not expose
   arbitrary file reads, raw Azure data, the reverse map, or a restore tool.
 - **A local planner only proposes.** `planner.py` may return a typed operation, approved
@@ -45,9 +50,9 @@ Rules for GitHub Copilot, Claude Code, or any other AI agent working in this rep
 
 ## Non-goals — do not build these
 
-- A general chat UI or multi-user conversational service. A future single-user,
-  loopback-only investigation GUI is allowed only through the same broker and release
-  state machine as MCP.
+- A general chat UI or multi-user conversational service. A single-user local
+  investigation GUI is allowed only through the same broker and release state machine
+  as MCP.
 - Interception, proxying or rewriting of GitHub Copilot's network traffic. Fragile,
   undocumented, and against its terms. The CLI and the MCP server are the front doors.
 - Inline-completion (ghost text) integration. The latency budget makes it impossible.

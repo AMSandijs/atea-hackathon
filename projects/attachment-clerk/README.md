@@ -8,6 +8,9 @@ Basware — including the case where the answer is not in the email.
 Built for a local-AI hackathon: kickoff Fri 25 Sep 14:00 CEST, delivery Mon 28 Sep
 08:00 CEST (09:00 Riga).
 
+**Status:** specification and build plan only; this repository does not contain an
+Attachment Clerk implementation. Airlock is the selected hackathon project.
+
 ## The workflow, from the person who has it
 
 Up to **8 such emails a day**, roughly 40 a week, around 1,700 a year for one clerk.

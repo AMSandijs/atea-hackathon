@@ -1,28 +1,33 @@
 # Build plan — Local AI Airlock
 
-## Implementation snapshot (26 Sep 2026)
+## Implementation snapshot (27 Sep 2026)
 
-The repository contains the T1-T9 modules and team-selected Copilot pilot
-(approved local cases, an MCP `read_case` tool, read-only single-resource Azure
-capture, and local restoration), plus T13's local typed planner, T14's private
-case scope/broker authorization gate, T15's fixed read adapters, and T16's separate
-local result sanitizer/checkpoint with approved sanitized evidence available through
-MCP. T17 adds a terminal one-query supervisor and T18 adds a single-user local Tkinter
-supervisor over that same query/release state machine. Repeated Copilot handoff remains
-manual; no live Azure query is part of these tests.
-The test suite and invented-data evaluation should be rerun on each laptop; this snapshot
-is not a claim that every original task acceptance criterion has been independently
-verified. T10's second-opinion pass, T11's paired Copilot answer-quality
-measurement, and T12's clipboard/UI extras are **not implemented**. The MCP
-server remains a pilot-specific, case/evidence-ID-only front door, not the originally
-proposed general `scan_text`/`ask_safely` interface. An actual Copilot session and
-live Azure collection safety remain unverified; see the README for boundaries.
+**Task ordering:** T1–T12 describe the original standalone sanitizer/gateway plan; T10
+and T11 are deferred, and T12 is stretch work. T13 onward records the selected Azure /
+Copilot pilot. The active milestone is **T21**, not the numerically lowest unfinished
+item. T22 remains proposed and has not started.
+
+The repository contains the T1-T9 sanitizer/gateway and the selected Azure/Copilot
+pilot: approved local cases, typed local planning, private alias scope, fixed read-only
+Azure adapters, separate result sanitization/release, CLI and Tkinter supervision, and
+the T19/T20 local queue for Copilot-requested GUI reads. Each Copilot request still
+causes at most one approved read; the GUI and operator remain in the loop.
+
+T21's multi-resource investigation evaluation is **in progress in the working tree**;
+its harness and tests must pass before this milestone is called complete. Tests use
+invented data and mocked Azure responses. They do not establish safety for arbitrary
+customer data or validate a live Azure tenant, local model, or VS Code/Copilot session.
+T10's second-opinion pass, T11's paired Copilot answer-quality measurement, and T12's
+clipboard/UI extras are **not implemented**. The MCP server is intentionally
+pilot-specific and case/evidence-ID-only; it does not implement the originally proposed
+general `scan_text`/`ask_safely` API. See the [project README](../README.md) for the
+user-facing workflow and limitations.
 
 Work in order. Each task is sized for one agent session. A task is done when its
 acceptance criteria pass and `pytest` is green. **Stop and report after each task.**
 
-The Saturday-lunch decision point is real: if T2-T6 are not solid by then, cut T9 and
-T10 entirely and ship a measured rule-based gateway. That still wins.
+The Saturday-lunch decision point was part of the original hackathon schedule. Current
+scope and remaining work are summarized above and in the T19–T21 progress section below.
 
 ---
 
@@ -191,9 +196,9 @@ does not execute Azure commands, mutate case scope, approve a query, or release 
   no Azure CLI call is made by this module.
 - Existing `pytest` and `ruff check .` pass.
 
-T13 added a proposal-only local planner. T14 adds private scope and a query authorization
-gate; later tasks will add mocked Azure adapters, separate result approval and sanitized
-MCP iteration, the local GUI, and finally a supervised disposable-subscription test.
+T13 added a proposal-only local planner. The private scope, query authorization, mocked
+Azure adapters, result approval, CLI/GUI supervision, and MCP handoff are covered by
+T14–T20 below. No live-tenant test is included in those milestones.
 
 ## T14 — Private scope and deterministic broker authorization
 
@@ -320,6 +325,40 @@ manual in T18. No live Azure requests in this task.
   approval dispatch, and command registration. `pytest`, `ruff check .`, and
   changed-file formatting pass. No live Azure calls. Stop after T18 and report; automatic
   Copilot request handoff remains a later task.
+
+## T19–T21 progress
+
+The [handoff implementation record](MCP-LOOP-IMPLEMENTATION-PLAN.md) contains the
+transport decision, T20 acceptance criteria, and remaining T21 evaluation plan.
+
+**T19 status (26 Sep 2026):** design recorded, pending review. The chosen transport
+is a per-user file queue under the private case directory (no listener); the record
+schema, state machine, expiry, duplicate/replay handling, MCP tool shapes, and the
+`plan_investigation`/`run_investigation_proposal` split are in `ARCHITECTURE.md`
+("Copilot-to-GUI request handoff"). A throwaway offline spike in `spikes/t19_handoff/`
+tests the queue mechanics; it is not production code.
+
+**T20 status (26 Sep 2026):** implemented, pending review. `airlock/handoff.py` is the
+production queue; `investigation.py` gains `plan_investigation`,
+`run_investigation_proposal`, and the headless GUI consumer `run_queued_request`;
+`mcpserver.py` adds `request_investigation` and `investigation_status`; `gui.py` claims
+one request at a time for the loaded case; `policy.yaml` gains `investigation:` expiry
+settings. Tests: `test_handoff.py`, `test_mcp_investigation.py`,
+`test_queued_investigation.py`, and GUI queue tests, all with mocked planner and Azure.
+Not yet exercised: a live VS Code/Copilot session, a real local model in the MCP
+process, and a live tenant.
+
+**T21 status (27 Sep 2026):** evaluation implementation in progress. The working tree
+adds `eval/investigations.py` and `tests/test_investigation_eval.py` to exercise repeated
+multi-resource reads, and `tests/test_adversarial.py` plus related in-progress changes
+exercise hostile proposals, queue records, Azure text, and approval paths. The last full
+pytest run observed on 26 Sep reported **215 passed, 4 xfailed, 3 failed**. The failures
+showed that extra fields in a model proposal and a queue record were accepted where the
+tests expect rejection; resolve these before calling the investigation loop verified.
+`ruff check .` also reported three findings in the in-progress T21 files (two B023 closure
+bindings and one unused test variable). See the command output from this pass; do not
+present the current tree as green. Results depend on the local model and are not a privacy
+guarantee.
 
 ---
 

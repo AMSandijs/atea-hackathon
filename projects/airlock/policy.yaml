@@ -45,3 +45,7 @@ gateway:
   endpoint_env: AIRLOCK_CLOUD_ENDPOINT
   api_key_env: AIRLOCK_CLOUD_KEY
   model: gpt-4o
+
+investigation:
+  request_claim_seconds: 300     # Copilot request must be claimed by the GUI within this
+  request_deadline_minutes: 30   # whole request, including both approvals, must finish by this
