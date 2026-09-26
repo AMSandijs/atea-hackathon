@@ -321,6 +321,29 @@ manual in T18. No live Azure requests in this task.
   changed-file formatting pass. No live Azure calls. Stop after T18 and report; automatic
   Copilot request handoff remains a later task.
 
+## Follow-on plan
+
+The next milestones for automated Copilot-to-GUI request handoff are laid out in
+`docs/MCP-LOOP-IMPLEMENTATION-PLAN.md`. Start with T19's local transport/approval
+contract decision; do not build an MCP query tool until that trust boundary is settled.
+
+**T19 status (26 Sep 2026):** design recorded, pending review. The chosen transport
+is a per-user file queue under the private case directory (no listener); the record
+schema, state machine, expiry, duplicate/replay handling, MCP tool shapes, and the
+`plan_investigation`/`run_investigation_proposal` split are in `ARCHITECTURE.md`
+("Copilot-to-GUI request handoff"). A throwaway offline spike in `spikes/t19_handoff/`
+tests the queue mechanics; it is not production code.
+
+**T20 status (26 Sep 2026):** implemented, pending review. `airlock/handoff.py` is the
+production queue; `investigation.py` gains `plan_investigation`,
+`run_investigation_proposal`, and the headless GUI consumer `run_queued_request`;
+`mcpserver.py` adds `request_investigation` and `investigation_status`; `gui.py` claims
+one request at a time for the loaded case; `policy.yaml` gains `investigation:` expiry
+settings. Tests: `test_handoff.py`, `test_mcp_investigation.py`,
+`test_queued_investigation.py`, and GUI queue tests, all with mocked planner and Azure.
+Not yet exercised: a live VS Code/Copilot session, a real local model in the MCP
+process, and a live tenant. T21 has not started.
+
 ---
 
 ## Demo checklist (Sunday)

@@ -54,15 +54,21 @@ that snapshot, the local CLI and desktop GUI support one supervised read per tur
 across approved VM CPU, Application Insights failure metrics, Logic App run summaries,
 and Azure SQL metrics. Airlock obtains a local typed proposal, shows the real target for
 operator approval, and requires a second checkpoint before exposing sanitized evidence
-through MCP. The operator manually transfers Copilot's next alias-only request to the local CLI
-or GUI and repeats; Copilot cannot directly execute Azure commands. Save the final answer
+through MCP. With the desktop GUI open, Copilot can request the next alias-only read
+itself through the `request_investigation` MCP tool; the GUI picks it up and asks for
+both approvals. With the CLI, the operator copies Copilot's request by hand. Either
+way, Copilot cannot execute Azure commands or approve anything. Save the final answer
 to a local text file and restore the real names on the laptop.
 
 For the desktop workflow, run `airlock gui` after installing the project. It provides
 the same local case/scope setup, one-query approval, and separate raw-versus-sanitized
-result review in a single-user Tkinter window. It does not add a listener or automate
-Copilot; you still paste Copilot's alias-only next-read request and share only the
-released opaque evidence ID.
+result review in a single-user Tkinter window. While an approved case with a scope is
+loaded, it checks once a second for Copilot requests for that case and handles one at a
+time. Requests are passed through a private file queue under `~/.airlock/cases/requests`
+(no network listener); they contain only IDs, the alias, the read type, and the time
+window. A request that the GUI does not pick up within 5 minutes, or that is not
+finished within 30 minutes, expires (see `investigation:` in `policy.yaml`). Closing the
+GUI cancels a pending request. You can still paste a request manually.
 The separate `airlock ask` cloud-gateway route also requires a configured loopback
 model and aborts if its prose sweep fails; an unconfigured gateway remains a local
 echo for offline testing.
@@ -126,7 +132,18 @@ echo for offline testing.
 5. In the Airlock Investigator agent, ask: `Analyze case <case ID>. What likely caused
    the CPU alert? Cite evidence, uncertainty, and one next read using only the approved
    aliases.` Keep original customer details out of the prompt and other Copilot tools.
-   Copy its alias-only next-read request into the local terminal:
+
+   **With the GUI (automatic handoff):** keep `airlock gui` open with the case loaded.
+   Copilot calls `request_investigation`; the GUI shows the real target for approval,
+   then the raw-versus-sanitized result. After release, Copilot sees the evidence ID via
+   `investigation_status` and reads it with `read_evidence`. The MCP server plans the
+   request with the local model, so VS Code must be started from a shell where
+   `AIRLOCK_LOCAL_MODEL_URL` is set (or set it in the `env` block of `.vscode/mcp.json`);
+   otherwise every request is `proposal_rejected`. The GUI and the MCP server must use
+   the same case folder (`AIRLOCK_CASE_DIR`, if you override it).
+
+   **With the CLI (manual handoff):** copy the alias-only next-read request into the
+   local terminal:
 
    ```powershell
    .\.venv\Scripts\airlock.exe investigate <case ID> --goal "Check VM_1 CPU over the last 30 minutes"
@@ -143,8 +160,10 @@ echo for offline testing.
 
 The current capture command can read one live resource's configuration or one metric,
 or the pilot can use an exported telemetry bundle. Broker reads are fixed and read-only;
-the CLI supervisor handles one query at a time and does not automatically receive MCP
-requests from Copilot. No alert-history fetch or portal interaction is implemented.
+the CLI supervisor handles one query at a time and does not receive MCP requests; only
+the GUI does. The automatic GUI handoff is tested offline with a mocked planner and
+Azure adapter; it has not yet been exercised with a live Copilot session, a real local
+model, or a live tenant. No alert-history fetch or portal interaction is implemented.
 A Copilot chat prompt, portal/browser tool, terminal command, workspace
 file, or direct Azure MCP tool can still send original data to the model if enabled or
 used. The custom agent narrows its tool list, but operators must verify the active tool

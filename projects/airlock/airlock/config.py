@@ -41,6 +41,13 @@ class GatewayConfig(BaseModel):
     model: str
 
 
+class InvestigationConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_claim_seconds: int = Field(default=300, ge=30, le=900)
+    request_deadline_minutes: int = Field(default=30, ge=5, le=60)
+
+
 class Policy(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -49,6 +56,7 @@ class Policy(BaseModel):
     thresholds: Thresholds
     model: ModelConfig
     gateway: GatewayConfig
+    investigation: InvestigationConfig = Field(default_factory=InvestigationConfig)
 
     @field_validator("version")
     @classmethod
