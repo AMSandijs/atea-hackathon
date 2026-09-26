@@ -1,4 +1,4 @@
-"""Local stdio MCP front door: only approved sanitized case text is exposed."""
+"""Local stdio MCP front door: only approved sanitized cases and evidence are exposed."""
 
 from __future__ import annotations
 

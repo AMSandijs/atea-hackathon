@@ -27,6 +27,7 @@ airlock/
   azure.py          Read-only Azure CLI resource capture, with local identity
   planner.py        Local model proposes one typed, bounded read; never executes tools
   broker.py         Deterministic scope checks and fixed Azure read adapters
+  investigation.py  One supervised query/sanitize/release turn; no MCP approval path
 eval/
   corpus/           Seeded fixtures (invented orgs, realistic shapes)
   seeds.yaml        Ground truth: what was planted where
@@ -392,6 +393,54 @@ The broker also validates the relationship between the chosen operation and targ
 JSON Schema alone cannot enforce all cross-field policy. Planner prompts, replies, and
 raw Azure results are not written to logs. Only sanitized evidence and minimal decision
 metadata may enter the case audit record.
+
+## Local supervised investigation turn (`investigation.py`, `cli.py`)
+
+T17 supplies a terminal supervisor for one proposal at a time. A Copilot-generated
+goal is manually copied to the local CLI and must name exactly one approved case alias.
+The configured loopback planner proposes one operation/alias/time range; the CLI then
+shows the real ARM resource ID and exact query to the local operator. Only a local
+approval callback reaches `broker.execute_query`. The resulting raw response is passed
+to `release_evidence`, which independently sanitizes and checkpoints it. Only a
+successful release prints an opaque evidence ID, which Copilot can read with the
+existing `read_evidence` MCP tool. The operator repeats this turn after Copilot reasons
+over the newly released evidence. This first slice deliberately uses a manual handoff;
+it does not let Copilot invoke Azure or supply approval decisions.
+
+```python
+@dataclass(frozen=True)
+class InvestigationTurn:
+    proposal: QueryProposal
+    status: Literal["proposal_rejected", "query_denied", "result_not_released", "released"]
+    evidence_id: str | None
+
+def run_investigation_turn(
+    case_id: str,
+    goal: str,
+    policy: Policy,
+    *,
+    approve_query: Callable[[QueryReview], bool] | None,
+    result_decision: bool | None = None,
+    allow_rules_only: bool = False,
+    directory: Path | None = None,
+) -> InvestigationTurn
+```
+
+The function loads approved case capabilities, calls `plan_query`, and returns without
+Azure access for a rejected proposal. Otherwise it calls `execute_query` with the
+trusted local query-approval callback, then `release_evidence` with an independent
+result decision. `result_decision=None` uses the existing local terminal checkpoint;
+the CLI never accepts a model-provided approval. It does not loop invisibly: each
+proposal and result is shown and approved before the next Copilot turn. Errors fail
+closed. Offline tests inject the planner response and Azure adapter; no live tenant
+query is run.
+
+`airlock scope CASE_ID --alias VM_1 ...` prompts for each full ARM resource ID without
+echoing it into the shell command/history, then shows the full targets and collects
+local approval before saving scope. Real resource IDs are supplied to the local CLI,
+never in Copilot tool arguments. `airlock investigate CASE_ID --goal "... ALIAS ..."`
+runs one supervised turn. Rules-only evidence release remains an explicit
+`--rules-only` opt-in; local planner availability is still required.
 
 ## Re-hydration (`rehydrate.py`)
 

@@ -7,12 +7,13 @@ The repository contains the T1-T9 modules and team-selected Copilot pilot
 capture, and local restoration), plus T13's local typed planner, T14's private
 case scope/broker authorization gate, T15's fixed read adapters, and T16's separate
 local result sanitizer/checkpoint with approved sanitized evidence available through
-MCP. The operator-side iterative query/release interaction and GUI are not yet built.
+MCP. T17 adds a terminal one-query supervisor with separate local approvals; repeated
+Copilot handoff remains manual, and a GUI is not yet built.
 The test suite and invented-data evaluation should be rerun on each laptop; this snapshot
 is not a claim that every original task acceptance criterion has been independently
 verified. T10's second-opinion pass, T11's paired Copilot answer-quality
 measurement, and T12's clipboard/UI extras are **not implemented**. The MCP
-server remains a pilot-specific, case-ID-only front door, not the originally
+server remains a pilot-specific, case/evidence-ID-only front door, not the originally
 proposed general `scan_text`/`ask_safely` interface. An actual Copilot session and
 live Azure collection safety remain unverified; see the README for boundaries.
 
@@ -259,6 +260,35 @@ evidence. T16 remains offline/mocked and must not query a live tenant.
 - Tests demonstrate query approval and result approval are separate; tests and `ruff
   check .` pass, with changed Python files formatted. Do not run Azure against a tenant.
   Stop after T16 and report.
+
+## T17 — Local supervised investigation turn (mocked Azure only)
+
+Wire the approved-case planner, query broker, result sanitizer/checkpoint, and evidence
+reader into a CLI flow. Add a local `scope` command that accepts repeated aliases and
+prompts for ARM resource IDs with input echo disabled, then asks for trusted operator
+approval before persisting the private scope. This keeps real IDs out of shell command
+history. Add `investigate CASE_ID --goal ...` to run one proposal at a time:
+plan locally from alias-only case capabilities, show the real target/operation/time
+range for local query approval, execute one fixed broker read, sanitize/checkpoint the
+raw result with a separate local decision, and print an evidence ID only on successful
+release. Copilot can then read that evidence through the existing MCP tool. The user
+manually transfers Copilot's next alias-only goal to the CLI and repeats; this task does
+not add a Copilot-to-Azure execution tool or GUI. Tests must mock the planner and Azure
+adapter. Do not query a live tenant.
+
+**Done when:**
+- Scope setup is explicit, local, validated, non-overwriting, hides typed resource IDs
+  from input echo and shows them only in the local approval review. Missing/rejected
+  scope approval persists nothing.
+- The local planner is required; its rejected/invalid proposals and query-approval
+  denials cause no Azure adapter call. The broker independently rechecks case, scope,
+  target, operation, and time range.
+- Query approval never implies result approval. Blocked or rejected results create no
+  MCP-readable evidence; successful turns return an opaque evidence ID whose MCP output
+  contains only sanitized text. Real identifiers stay in local review/scope state.
+- CLI tests cover approved scope and a full mocked investigation turn, plus rejection
+  paths. `pytest`, `ruff check .`, and changed-file formatting pass. No live Azure calls.
+  Stop after T17 and report; GUI and automatic MCP request handoff remain later tasks.
 
 ---
 

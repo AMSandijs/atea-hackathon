@@ -49,13 +49,14 @@ extension, no MITM of Copilot traffic, no inline-completion interception.
 
 The local pilot starts from an exported Azure alert or resource snapshot. Airlock scans
 it locally, asks for approval, and gives GitHub Copilot an opaque case ID. Copilot reads
-only the approved sanitized snapshot through the local MCP server. Save Copilot's answer
+only the approved sanitized snapshot through the local MCP server. To investigate beyond
+that snapshot, the local CLI supports one supervised read per turn across approved VM
+CPU, Application Insights failure metrics, Logic App run summaries, and Azure SQL
+metrics. Airlock obtains a local typed proposal, shows the real target for operator
+approval, and requires a second checkpoint before exposing sanitized evidence through
+MCP. The operator manually transfers Copilot's next alias-only request to the CLI and
+repeats; Copilot cannot directly execute Azure commands. Save the final Copilot answer
 to a local text file and restore the real names on the laptop.
-The broker now also has an internal, fixed read path for approved VM CPU, Application
-Insights failure metrics, Logic App run summaries, and Azure SQL metrics. It is not yet
-exposed through MCP or a user-facing investigation command. Its raw return stays local;
-do not give it to Copilot until the separate result sanitizer and release approval are
-implemented.
 The separate `airlock ask` cloud-gateway route also requires a configured loopback
 model and aborts if its prose sweep fails; an unconfigured gateway remains a local
 echo for offline testing.
@@ -107,17 +108,37 @@ echo for offline testing.
    Monitor measurements. Alert history, guest processes, SQL query text, Logic App
    action inputs/outputs, and Log Analytics traces still require a local export and
    `airlock prepare` for a deeper causal investigation.
-4. In the Airlock Investigator agent, ask: `Analyze case <case ID>. What likely caused
-   the CPU alert? Cite the evidence and uncertainty.` Use only the case ID; keep
-   original customer details out of the prompt and out of other Copilot tools.
-5. Save the Copilot answer to a local file outside the VS Code workspace and run
+4. In the local terminal, define the resources Copilot may ask about. Each ID is entered
+   through a hidden local prompt, then displayed only on the local approval screen:
+
+   ```powershell
+   .\.venv\Scripts\airlock.exe scope <case ID> --alias VM_1 --alias APP_1
+   ```
+
+   Assign aliases that you can safely share with Copilot. The scope is private and
+   cannot be changed in place; create a new case to change it.
+5. In the Airlock Investigator agent, ask: `Analyze case <case ID>. What likely caused
+   the CPU alert? Cite evidence, uncertainty, and one next read using only the approved
+   aliases.` Keep original customer details out of the prompt and other Copilot tools.
+   Copy its alias-only next-read request into the local terminal:
+
+   ```powershell
+   .\.venv\Scripts\airlock.exe investigate <case ID> --goal "Check VM_1 CPU over the last 30 minutes"
+   ```
+
+   Review and approve the exact real Azure target/query locally, then separately inspect
+   and approve the sanitized result. `--rules-only` is an explicit opt-in for evidence
+   scanning, but the local planner model is still required. Only after approval does the
+   CLI print an evidence ID. Ask Copilot to read that evidence using Airlock's
+   `read_evidence` tool, then repeat with its next alias-only request.
+6. Save the final Copilot answer to a local file outside the VS Code workspace and run
    `airlock restore <case ID> answer.txt`. Keep raw exports and the restored answer
    outside the Copilot workspace and out of its open editor tabs.
 
 The current capture command can read one live resource's configuration or one metric,
-or the pilot can use an exported telemetry bundle. Although the internal broker adapters
-now cover several telemetry sources, they are not wired into Copilot iteration or result
-release. No alert-history fetch or portal interaction is implemented.
+or the pilot can use an exported telemetry bundle. Broker reads are fixed and read-only;
+the CLI supervisor handles one query at a time and does not automatically receive MCP
+requests from Copilot. No alert-history fetch or portal interaction is implemented.
 A Copilot chat prompt, portal/browser tool, terminal command, workspace
 file, or direct Azure MCP tool can still send original data to the model if enabled or
 used. The custom agent narrows its tool list, but operators must verify the active tool
