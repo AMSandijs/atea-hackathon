@@ -18,7 +18,7 @@ airlock/
   classify.py       Finding -> tier, using policy.yaml
   vault.py          Deterministic structure-preserving stand-ins + reverse lookup
   sanitize.py       Orchestrates detect -> classify -> swap
-  gateway.py        Sole outbound cloud-model request after sanitization
+  gateway.py        Standalone ask workflow: sends approved sanitized text to its cloud model
   rehydrate.py      Restores originals in the cloud answer; reports unmapped
   checkpoint.py     Renders the approval view, collects the decision
   mcpserver.py      Local stdio MCP front door: case/evidence readers, request/status tools
@@ -425,8 +425,10 @@ metadata may enter the case audit record.
 
 ## Local supervised investigation turn (`investigation.py`, `cli.py`)
 
-T17 supplies a terminal supervisor for one proposal at a time. A Copilot-generated
-goal is manually copied to the local CLI and must name exactly one approved case alias.
+At milestone T17, the terminal supervisor handled one proposal at a time. A
+Copilot-generated goal was manually copied to the local CLI and had to name exactly one
+approved case alias. The later T20 handoff adds the MCP-to-GUI request queue; the CLI
+still supports manual one-turn use.
 The configured loopback planner proposes one operation/alias/time range; the CLI then
 shows the real ARM resource ID and exact query to the local operator. Only a local
 approval callback reaches `broker.execute_query`. The resulting raw response is passed
@@ -474,7 +476,7 @@ runs one supervised turn. Rules-only evidence release remains an explicit
 
 ## Local desktop supervisor (`gui.py`)
 
-T18 adds `airlock gui`, a single-user Tkinter desktop interface. It is a UI over the
+At milestone T18, `airlock gui` added a single-user Tkinter desktop interface. It is a UI over the
 existing `create_case_scope` and `run_investigation_turn` paths, not another execution
 or approval implementation. No HTTP listener or background network service is opened.
 The UI accepts an approved case ID, alias-to-resource scope entries, and an alias-only
@@ -490,16 +492,19 @@ To support that view, `release_evidence` accepts
 `approve_result(raw_result, sanitized) -> bool`; the release code enforces the block
 guard independently of the GUI callback and persists only after an explicit `True`.
 The GUI shows the opaque evidence ID after successful release; Copilot reads it through
-the existing MCP tool. The operator continues by pasting Copilot's next alias-only goal.
+the existing MCP tool. At T18, the operator pasted Copilot's next alias-only goal
+manually; the T20 request queue supersedes that handoff path when the GUI is running.
 No customer data or reverse mapping is logged or sent to the GUI over a network. Tests
 use mocked planner/Azure responses and exercise approval dispatch without requiring an
 interactive desktop or live Azure tenant.
 
 ## Copilot-to-GUI request handoff (T19 decision; implemented in T20)
 
-T19 fixes the contract below before any production code. It replaces the manual goal
-paste in T17/T18 with a Copilot-initiated request while keeping every approval in the
-local GUI. See `docs/MCP-LOOP-IMPLEMENTATION-PLAN.md` for the ordered T20 criteria.
+T19 recorded the transport and safety contract; T20 implements it. The queue replaces
+manual goal transfer in the GUI workflow with a Copilot-initiated request while keeping
+every Azure query and evidence-release approval in the local GUI. The CLI and GUI manual
+paste path remain available. The dated T19/T20 criteria and current T21 evaluation work
+are in [`MCP-LOOP-IMPLEMENTATION-PLAN.md`](MCP-LOOP-IMPLEMENTATION-PLAN.md).
 
 ### Transport decision
 

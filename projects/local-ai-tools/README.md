@@ -1,7 +1,9 @@
-# Local AI on the hackathon laptops
+# Local coding assistant setup
 
-**Plan and first laptop check, 25 Sep 2026.** The setup below was run on the
-pictured laptop. Other team laptops still need their own hardware check.
+## Aider + LM Studio for repository work
+
+**Plan and first laptop check, 25 Sep 2026.** The setup below was run on one team
+Windows laptop. Other team laptops still need their own hardware check.
 
 ## Team quick start
 
@@ -53,7 +55,7 @@ For example, after starting Aider:
 
 ```text
 /read-only projects/airlock/AGENTS.md projects/airlock/docs/ARCHITECTURE.md projects/airlock/docs/BUILD-PLAN.md
-What is the lowest-numbered unfinished Airlock task? Explain its acceptance criteria before changing files.
+What is the Airlock milestone explicitly marked active in the build plan? Explain its status and acceptance criteria before changing files.
 ```
 
 The installed Qwen2.5-Coder models are text-only; they cannot interpret a
@@ -92,7 +94,7 @@ current workload, start with **Qwen2.5-Coder-7B-Instruct, Q4_K_M** (about
 downloaded but needs more free RAM before a live trial. Other laptops may
 support the 14B model more comfortably.
 
-The screenshot shows one Windows 11 Enterprise laptop with a Core Ultra 7 258V,
+The checked machine was a Windows 11 Enterprise laptop with a Core Ultra 7 258V,
 32 GB RAM, Intel Arc 140V graphics, and about 805 GB free storage. The reported
 128 MB of dedicated graphics memory is not a 128 MB limit: this integrated GPU
 also uses **shared system RAM**. The displayed 16 GB is therefore not a separate
@@ -166,7 +168,7 @@ LM Studio connectivity and Git/shell commands. [LM Studio requirements](https://
    & .\projects\local-ai-tools\Start-LocalAI.ps1
    ```
 
-   The launcher and its [model metadata](../projects/local-ai-tools/model-metadata.json)
+The launcher and its [model metadata](model-metadata.json)
    are both in Git. Its API base is `http://127.0.0.1:1234/v1`; `local-only` is
    a dummy API-key value required by Aider, not a credential. The script
    disables auto-commits, analytics and update checks for the session, keeps
@@ -178,10 +180,11 @@ LM Studio connectivity and Git/shell commands. [LM Studio requirements](https://
 ## How to build an idea with it
 
 Start with `projects/airlock/`, the selected hackathon entry in
-`DECISIONS.md`. Read that project's `AGENTS.md`, architecture and build plan
-before asking Aider to edit anything. Work on **one lowest-numbered unfinished
-task** and stop when its acceptance criteria and tests pass. Do not ask a
-small local model to implement the whole plan in one prompt.
+`../../DECISIONS.md`. Read that project's `AGENTS.md`, architecture and build plan
+before asking Aider to edit anything. Work on **one explicitly active/next milestone**
+and stop when its acceptance criteria and tests pass. T21 is currently active; T10–T12
+are deferred parts of the original plan, not the next task. Do not ask a small local
+model to implement the whole plan in one prompt.
 
 For each task:
 
@@ -190,13 +193,13 @@ For each task:
 2. In Aider use `/read-only` for the relevant project instructions and plan,
    `/add` for only the files needed for that task, and `/ask` before `/code`
    when the design is unclear. Example request: *"Read the project architecture
-   and implement only T9. Follow its existing module names and signatures.
-   Run the T9 tests, then report the diff and any failing checks."*
+   and the current T21 evaluation plan. Review only the existing T21 changes; don't
+   implement T22. Run the focused and full tests, then report failures and the diff."*
 3. Use Aider's `/run` or `/test` to run the project's documented checks.
    Use `/diff` to inspect edits. Aider's `/git status` and `/git diff --check`
    can run Git commands from the chat; the same commands work in PowerShell.
 4. After a human reviews the diff and tests, commit only the intended files:
-   `git add <files>`, `git commit -m "Implement airlock T9 local model sweep"`,
+   `git add <files>`, `git commit -m "Complete Airlock T21 evaluation"`,
    `git push -u origin <branch>`. Aider's `/git` command can run those Git
    operations too. Open a pull request and merge after review. Avoid `git add .`
    when model outputs or local state may be present.
@@ -206,16 +209,14 @@ misread instructions or produce malformed edits. Keep changes small, inspect
 every diff and run the tests. Aider's defaults auto-commit edits; the startup
 command above disables that so each task remains reviewable.
 
-**Application model boundary:** `projects/airlock/docs/ARCHITECTURE.md` and
-`BUILD-PLAN.md` specify Foundry Local with an Ollama fallback for the Airlock
-prose sweep. This plan does not silently replace that project interface with
-LM Studio. The coding assistant can help implement the specified interface.
-The Airlock itself deliberately sends *approved sanitized text* to a cloud
-model through its gateway; a local coding assistant does not make that
-application fully offline. The Attachment Clerk has its own build plan and
-local inference integration.
+**Application model boundary:** the Airlock runtime has its own configurable local
+model and separate setup guide in `../airlock/docs/LOCAL-AI-SETUP.md`. The coding
+assistant described here is not part of the Airlock data path. Airlock has both a
+standalone sanitized cloud-gateway workflow and a Copilot Azure-investigation pilot;
+in either case, running Aider locally does not make cloud traffic private by itself.
+The Attachment Clerk is a separate, currently unimplemented project specification.
 
-## Result on the pictured laptop
+## Results measured on the checked laptop (25 Sep 2026)
 
 | Check | Measured result, 25 Sep 2026 |
 |---|---|
@@ -261,7 +262,7 @@ Airlock gateway call are network operations.
 
 Keep real customer data and credentials out of the repo, prompts, logs and
 fixtures. Use invented data and mocks or test tenants as required by
-`docs/GROUND-RULES.md`. Keep model files and local chat logs outside the repo.
+`../../docs/GROUND-RULES.md`. Keep model files and local chat logs outside the repo.
 Review staged files before pushing. A local model can read local files, so
 limit Aider's file context to the task and never point it at real customer
 material. Existing project instructions and build plans override generic

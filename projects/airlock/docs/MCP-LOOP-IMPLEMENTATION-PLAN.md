@@ -1,9 +1,11 @@
-# Airlock iterative Copilot investigation — implementation plan
+# Copilot-to-GUI investigation handoff — design and implementation record
 
-**Purpose:** hand this plan to Claude to continue the Airlock build after T18.
-**Baseline:** T17's supervised CLI and T18's single-user desktop supervisor are in the
-merged Airlock PR. The GUI still requires the operator to paste each Copilot request.
-The current MCP server exposes only approved `read_case` and `read_evidence` tools.
+This document records the T19 transport/safety decision and T20 implementation
+criteria for the Airlock Azure investigation loop. T20 is implemented in the repository;
+T21 adversarial, multi-resource evaluation is now in progress. Check
+[`BUILD-PLAN.md`](BUILD-PLAN.md) for current status and [`EVAL.md`](EVAL.md) for the
+evaluation commands and boundaries. Continue from T21; do not repeat the completed
+T19/T20 work unless a review or test identifies a specific gap.
 
 ## Desired user experience
 
@@ -140,7 +142,7 @@ for one typed proposal. `run_investigation_proposal` treats even a typed queue e
 untrusted and delegates final authorization to the existing broker. Finalize names and
 types in `ARCHITECTURE.md` during T19 before coding.
 
-**T19 outcome (26 Sep 2026, pending review):** the recommended file queue was kept.
+**T19 outcome (26 Sep 2026):** the recommended file queue was kept.
 Final names and shapes are in `ARCHITECTURE.md` ("Copilot-to-GUI request handoff").
 Deviations from the sketch above: the MCP request tool may also return `busy` (with
 the active request ID) and `supervisor_unavailable`; the status tool may return
@@ -195,6 +197,10 @@ after it started. Spike: `spikes/t19_handoff/` (run explicitly with pytest).
 
 ## T21 — Adversarial evaluation and demo readiness
 
+**Status (27 Sep 2026): in progress.** The evaluation harness and tests are present in
+the current working tree; acceptance is not complete until the checks run and findings
+are recorded.
+
 - Add invented multi-resource investigations that require successive reads across VM
   CPU, Application Insights, Logic Apps, and SQL metrics. Measure useful evidence,
   missed/over-redacted identifiers, latency, and number of human approvals per turn.
@@ -208,12 +214,11 @@ after it started. Spike: `spikes/t19_handoff/` (run explicitly with pytest).
   invented/test resources and explicit operator authorization. Do not include live
   Azure setup or fault injection in T19–T21.
 
-## Claude handoff instructions
+## Agent handoff instructions
 
-Work from the Airlock project directory. Follow `AGENTS.md`: one task at a time; update
-`ARCHITECTURE.md` before implementing a missing API contract; use invented data and
-mocked Azure adapters; run tests and Ruff; stop after the current task and report what
-passed and what remains unverified. Start with T19 only. Do not implement the production
-queue, change MCP tools, commit/push, or contact Azure until the T19 transport and
-contract decision is documented and reviewed. A throwaway offline queue spike is allowed
-only to test the documented transport decision.
+Work from the Airlock project directory and follow `AGENTS.md`. Continue T21 only: review
+the existing investigation evaluator and tests, use invented fixtures and mocked Azure
+responses, run pytest and Ruff, and report measured output plus anything still
+unverified. Update `ARCHITECTURE.md` before changing a missing contract. Do not contact
+Azure or claim live Copilot/model validation based on mocked tests. Preserve unrelated
+working-tree changes and do not commit or push unless explicitly requested.
