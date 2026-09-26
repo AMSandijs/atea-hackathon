@@ -10,6 +10,7 @@ from typing import Literal
 from .broker import QueryReview, case_capabilities, execute_query
 from .cases import release_evidence
 from .config import Policy
+from .models import Sanitized
 from .planner import QueryProposal, plan_query
 
 TurnStatus = Literal["proposal_rejected", "query_denied", "result_not_released", "released"]
@@ -31,11 +32,14 @@ def run_investigation_turn(
     *,
     approve_query: Callable[[QueryReview], bool] | None,
     result_decision: bool | None = None,
+    approve_result: Callable[[str, Sanitized], bool] | None = None,
     allow_rules_only: bool = False,
     directory: Path | None = None,
 ) -> InvestigationTurn:
     """Run one bounded investigation turn; only approved sanitized evidence is released."""
 
+    if result_decision is not None and approve_result is not None:
+        raise ValueError("supply either a result decision or a local review callback")
     capabilities = case_capabilities(case_id, directory)
     proposal = plan_query(goal, capabilities, policy)
     if proposal.operation == "reject":
@@ -55,6 +59,7 @@ def run_investigation_turn(
         raw_result,
         policy,
         decision=result_decision,
+        approve_result=approve_result,
         allow_rules_only=allow_rules_only,
         directory=directory,
     )

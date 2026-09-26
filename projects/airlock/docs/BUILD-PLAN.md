@@ -7,8 +7,9 @@ The repository contains the T1-T9 modules and team-selected Copilot pilot
 capture, and local restoration), plus T13's local typed planner, T14's private
 case scope/broker authorization gate, T15's fixed read adapters, and T16's separate
 local result sanitizer/checkpoint with approved sanitized evidence available through
-MCP. T17 adds a terminal one-query supervisor with separate local approvals; repeated
-Copilot handoff remains manual, and a GUI is not yet built.
+MCP. T17 adds a terminal one-query supervisor and T18 adds a single-user local Tkinter
+supervisor over that same query/release state machine. Repeated Copilot handoff remains
+manual; no live Azure query is part of these tests.
 The test suite and invented-data evaluation should be rerun on each laptop; this snapshot
 is not a claim that every original task acceptance criterion has been independently
 verified. T10's second-opinion pass, T11's paired Copilot answer-quality
@@ -288,7 +289,37 @@ adapter. Do not query a live tenant.
   contains only sanitized text. Real identifiers stay in local review/scope state.
 - CLI tests cover approved scope and a full mocked investigation turn, plus rejection
   paths. `pytest`, `ruff check .`, and changed-file formatting pass. No live Azure calls.
-  Stop after T17 and report; GUI and automatic MCP request handoff remain later tasks.
+  Stop after T17 and report; the GUI (T18) and automatic MCP request handoff are
+  separate tasks.
+
+## T18 — Single-user local investigation GUI
+
+Add `airlock gui` as a Tkinter desktop interface over the existing scope and one-turn
+investigation APIs. It is a focused control surface, not a chat UI or web service. Let
+the operator enter a case ID, create a private alias/resource scope with masked input,
+paste an alias-only Copilot goal, inspect the proposed read, and review raw-local versus
+sanitized Azure evidence before a separate release decision. The GUI must call the same
+`create_case_scope` and `run_investigation_turn` path as the CLI; it must not reimplement
+Azure commands or gate decisions. Run blocking planner/Azure work in a worker and marshal
+every approval dialog to the UI thread; cancellation, close, or callback error rejects.
+The result view never stores or exports raw Azure output. Copilot still receives only an
+approved evidence ID through the existing MCP reader; repeated next-read requests remain
+manual in T18. No live Azure requests in this task.
+
+**Done when:**
+- `airlock gui` starts the desktop supervisor without opening a listener. It supports
+  case/scope setup and one investigation turn, and shows distinct scope, query, and
+  result-release approval steps.
+- Resource IDs are masked during entry and are visible only in explicit local approval
+  views. Result approval shows the exact sanitized candidate and detector uncertainty;
+  block-tier results cannot be released even if a callback attempts approval.
+- Worker/UI handoff fails closed on cancellation, callback exceptions, and window close.
+  No raw result or reverse mapping is logged, saved to a public evidence file, or sent
+  to MCP. Evidence is readable only after explicit result approval.
+- Headless tests cover result-review callback behavior, block/reject cases, worker-to-UI
+  approval dispatch, and command registration. `pytest`, `ruff check .`, and
+  changed-file formatting pass. No live Azure calls. Stop after T18 and report; automatic
+  Copilot request handoff remains a later task.
 
 ---
 

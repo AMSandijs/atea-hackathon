@@ -50,13 +50,19 @@ extension, no MITM of Copilot traffic, no inline-completion interception.
 The local pilot starts from an exported Azure alert or resource snapshot. Airlock scans
 it locally, asks for approval, and gives GitHub Copilot an opaque case ID. Copilot reads
 only the approved sanitized snapshot through the local MCP server. To investigate beyond
-that snapshot, the local CLI supports one supervised read per turn across approved VM
-CPU, Application Insights failure metrics, Logic App run summaries, and Azure SQL
-metrics. Airlock obtains a local typed proposal, shows the real target for operator
-approval, and requires a second checkpoint before exposing sanitized evidence through
-MCP. The operator manually transfers Copilot's next alias-only request to the CLI and
-repeats; Copilot cannot directly execute Azure commands. Save the final Copilot answer
+that snapshot, the local CLI and desktop GUI support one supervised read per turn
+across approved VM CPU, Application Insights failure metrics, Logic App run summaries,
+and Azure SQL metrics. Airlock obtains a local typed proposal, shows the real target for
+operator approval, and requires a second checkpoint before exposing sanitized evidence
+through MCP. The operator manually transfers Copilot's next alias-only request to the local CLI
+or GUI and repeats; Copilot cannot directly execute Azure commands. Save the final answer
 to a local text file and restore the real names on the laptop.
+
+For the desktop workflow, run `airlock gui` after installing the project. It provides
+the same local case/scope setup, one-query approval, and separate raw-versus-sanitized
+result review in a single-user Tkinter window. It does not add a listener or automate
+Copilot; you still paste Copilot's alias-only next-read request and share only the
+released opaque evidence ID.
 The separate `airlock ask` cloud-gateway route also requires a configured loopback
 model and aborts if its prose sweep fails; an unconfigured gateway remains a local
 echo for offline testing.

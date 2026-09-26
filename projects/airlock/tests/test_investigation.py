@@ -15,6 +15,7 @@ from airlock.cases import prepare_case, read_evidence
 from airlock.cli import app
 from airlock.config import load_policy
 from airlock.mcpserver import mcp
+from airlock.models import Sanitized
 from airlock.planner import QueryProposal
 from airlock.scope import create_case_scope
 
@@ -97,6 +98,36 @@ def test_supervised_turn_releases_only_sanitized_mcp_evidence(
     assert "nordbro" not in cloud_visible
     assert "qconv" not in cloud_visible
     assert "97" in cloud_visible
+
+
+def test_supervised_turn_uses_local_result_review_callback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case_id = _case_with_scope(tmp_path)
+    monkeypatch.delenv("AIRLOCK_LOCAL_MODEL_URL", raising=False)
+    monkeypatch.setattr(investigation, "plan_query", lambda *_: _proposal())
+    monkeypatch.setattr(azure, "_execute_authorized_read", lambda _: RAW_RESULT)
+    reviews: list[tuple[str, Sanitized]] = []
+
+    def approve_result(raw: str, sanitized: Sanitized) -> bool:
+        reviews.append((raw, sanitized))
+        return True
+
+    turn = investigation.run_investigation_turn(
+        case_id,
+        "Inspect VM_1 CPU and adjacent database activity",
+        load_policy(),
+        approve_query=lambda _: True,
+        approve_result=approve_result,
+        allow_rules_only=True,
+        directory=tmp_path,
+    )
+
+    assert turn.status == "released"
+    assert len(reviews) == 1
+    assert reviews[0][0] == RAW_RESULT
+    assert "nordbro" not in reviews[0][1].text
+    assert "qconv" not in reviews[0][1].text
 
 
 @pytest.mark.parametrize(

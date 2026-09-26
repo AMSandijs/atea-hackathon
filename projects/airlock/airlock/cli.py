@@ -275,6 +275,15 @@ def investigate(
     _report_investigation_turn(turn)
 
 
+@app.command(name="gui")
+def gui() -> None:
+    """Open the local desktop supervisor for a supervised investigation."""
+
+    from .gui import launch_gui
+
+    launch_gui()
+
+
 def _report_investigation_turn(turn: InvestigationTurn) -> None:
     if turn.status == "released" and turn.evidence_id is not None:
         typer.echo(f"evidence_id={turn.evidence_id}")

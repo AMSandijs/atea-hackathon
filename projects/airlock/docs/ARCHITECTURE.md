@@ -28,6 +28,7 @@ airlock/
   planner.py        Local model proposes one typed, bounded read; never executes tools
   broker.py         Deterministic scope checks and fixed Azure read adapters
   investigation.py  One supervised query/sanitize/release turn; no MCP approval path
+  gui.py            Single-user local desktop supervisor; no server or chat UI
 eval/
   corpus/           Seeded fixtures (invented orgs, realistic shapes)
   seeds.yaml        Ground truth: what was planted where
@@ -348,16 +349,19 @@ T16 adds a separate result-release boundary in `cases.py`:
 
 ```python
 release_evidence(case_id, raw_result, policy, *, decision=None,
-                 allow_rules_only=False, directory=None) -> str | None
+                 approve_result=None, allow_rules_only=False, directory=None) -> str | None
 read_evidence(case_id, evidence_id, directory=None) -> str
 ```
 
 `release_evidence` requires an already-approved parent case, caps raw result input at
 1 MiB, sanitizes locally using the same stand-ins for values already mapped by that
-case, and renders the existing local checkpoint. This is a second approval, independent
-of query approval. A blocked result or rejected checkpoint creates no evidence or map
-file. Rules-only processing is refused unless explicitly opted into. On approval, only
-the sanitized text and opaque evidence ID are written as the MCP-readable evidence;
+case, and obtains a distinct local result approval. The CLI uses the existing local
+checkpoint; a desktop caller may supply `approve_result(raw_result, sanitized)` to
+present and decide the same candidate. This is independent of query approval. A blocked
+result or rejected checkpoint creates no evidence or map file, even if a callback
+returns approval. Rules-only processing is refused unless explicitly opted into. On
+approval, only the sanitized text and opaque evidence ID are written as the MCP-readable
+evidence;
 the expanded reverse map is stored in a separate private sidecar. Raw Azure output is
 never persisted or logged. `read_evidence` revalidates both the parent case and evidence
 approval and returns only sanitized text. MCP exposes it as `read_evidence(case_id,
@@ -421,6 +425,7 @@ def run_investigation_turn(
     *,
     approve_query: Callable[[QueryReview], bool] | None,
     result_decision: bool | None = None,
+    approve_result: Callable[[str, Sanitized], bool] | None = None,
     allow_rules_only: bool = False,
     directory: Path | None = None,
 ) -> InvestigationTurn
@@ -441,6 +446,29 @@ local approval before saving scope. Real resource IDs are supplied to the local 
 never in Copilot tool arguments. `airlock investigate CASE_ID --goal "... ALIAS ..."`
 runs one supervised turn. Rules-only evidence release remains an explicit
 `--rules-only` opt-in; local planner availability is still required.
+
+## Local desktop supervisor (`gui.py`)
+
+T18 adds `airlock gui`, a single-user Tkinter desktop interface. It is a UI over the
+existing `create_case_scope` and `run_investigation_turn` paths, not another execution
+or approval implementation. No HTTP listener or background network service is opened.
+The UI accepts an approved case ID, alias-to-resource scope entries, and an alias-only
+Copilot goal. Real resource identifiers are masked while entered and displayed only in
+the explicit local scope/query approval views. A worker thread runs the planner and
+fixed broker read; all UI approvals are marshalled to the main UI thread and default
+to rejection on cancellation, window close, or callback failure.
+
+The query dialog shows the operation, target alias, real ARM ID, and time window. The
+result dialog shows raw local evidence and the exact sanitized candidate side by side,
+lists findings/uncertainty, and offers release only when no block-tier finding exists.
+To support that view, `release_evidence` accepts
+`approve_result(raw_result, sanitized) -> bool`; the release code enforces the block
+guard independently of the GUI callback and persists only after an explicit `True`.
+The GUI shows the opaque evidence ID after successful release; Copilot reads it through
+the existing MCP tool. The operator continues by pasting Copilot's next alias-only goal.
+No customer data or reverse mapping is logged or sent to the GUI over a network. Tests
+use mocked planner/Azure responses and exercise approval dispatch without requiring an
+interactive desktop or live Azure tenant.
 
 ## Re-hydration (`rehydrate.py`)
 

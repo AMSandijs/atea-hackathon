@@ -14,6 +14,7 @@ from airlock.broker import execute_query
 from airlock.cases import prepare_case, read_evidence, release_evidence, restore_case
 from airlock.config import load_policy
 from airlock.mcpserver import mcp
+from airlock.models import Sanitized
 from airlock.planner import QueryProposal
 from airlock.scope import create_case_scope
 
@@ -88,6 +89,77 @@ def test_rejected_or_blocked_evidence_is_not_persisted(tmp_path: Path) -> None:
     )
     assert not list(tmp_path.glob(f"{case_id}.evidence-*.json"))
     assert not list(tmp_path.glob(f"{case_id}.evidence-*.map.json"))
+
+
+def test_local_result_review_receives_candidate_and_controls_persistence(tmp_path: Path) -> None:
+    case_id = _approved_case(tmp_path)
+    raw = "host: nordbro-rmq-prd.westeurope.cloudapp.azure.com\ncpu_percent: 97"
+    reviews: list[tuple[str, str]] = []
+
+    def approve(raw_result: str, sanitized: Sanitized) -> bool:
+        reviews.append((raw_result, sanitized.text))
+        return True
+
+    evidence_id = release_evidence(
+        case_id,
+        raw,
+        load_policy(),
+        approve_result=approve,
+        allow_rules_only=True,
+        directory=tmp_path,
+    )
+
+    assert evidence_id is not None
+    assert reviews == [(raw, read_evidence(case_id, evidence_id, tmp_path))]
+    assert "nordbro" not in reviews[0][1]
+    public = (tmp_path / f"{case_id}.evidence-{evidence_id}.json").read_text(encoding="utf-8")
+    assert "nordbro" not in public
+
+
+def test_callback_cannot_release_blocked_result_or_override_rejection(tmp_path: Path) -> None:
+    case_id = _approved_case(tmp_path)
+    reviewed: list[bool] = []
+
+    def approve_blocked(_raw: str, sanitized: Sanitized) -> bool:
+        reviewed.append(bool(sanitized.blocked))
+        return True
+
+    blocked_id = release_evidence(
+        case_id,
+        "STORAGE_KEY=Xo9vK2mA7pQ1sR4tU6wY8zB0cD3eF5gH",
+        load_policy(),
+        approve_result=approve_blocked,
+        allow_rules_only=True,
+        directory=tmp_path,
+    )
+    rejected_id = release_evidence(
+        case_id,
+        "cpu_percent: 97",
+        load_policy(),
+        approve_result=lambda _raw, _sanitized: False,
+        allow_rules_only=True,
+        directory=tmp_path,
+    )
+
+    assert blocked_id is None
+    assert reviewed == [True]
+    assert rejected_id is None
+    assert not list(tmp_path.glob(f"{case_id}.evidence-*.json"))
+    assert not list(tmp_path.glob(f"{case_id}.evidence-*.map.json"))
+
+
+def test_result_decision_and_review_callback_are_mutually_exclusive(tmp_path: Path) -> None:
+    case_id = _approved_case(tmp_path)
+    with pytest.raises(ValueError, match="either a result decision or a local review callback"):
+        release_evidence(
+            case_id,
+            "cpu_percent: 97",
+            load_policy(),
+            decision=True,
+            approve_result=lambda _raw, _sanitized: True,
+            allow_rules_only=True,
+            directory=tmp_path,
+        )
 
 
 def test_query_approval_does_not_approve_result_release(

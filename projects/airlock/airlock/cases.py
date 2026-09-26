@@ -6,11 +6,13 @@ import json
 import os
 import re
 import secrets
+from collections.abc import Callable
 from pathlib import Path
 
 from .checkpoint import checkpoint
 from .config import Policy
 from .detect.model import local_endpoint
+from .models import Sanitized
 from .rehydrate import rehydrate
 from .sanitize import sanitize
 from .vault import Vault
@@ -126,11 +128,14 @@ def release_evidence(
     policy: Policy,
     *,
     decision: bool | None = None,
+    approve_result: Callable[[str, Sanitized], bool] | None = None,
     allow_rules_only: bool = False,
     directory: Path | None = None,
 ) -> str | None:
     """Sanitize and separately approve one Azure result before local persistence."""
 
+    if decision is not None and approve_result is not None:
+        raise ValueError("supply either a result decision or a local review callback")
     if not isinstance(raw_result, str) or len(raw_result.encode("utf-8")) > _MAX_EVIDENCE_BYTES:
         raise ValueError("Azure result exceeds the 1 MB evidence limit or is not text")
     root = directory or case_directory()
@@ -151,7 +156,23 @@ def release_evidence(
         initial_pairs=case_mapping,
     )
     sanitized = sanitize(raw_result, policy, vault, strict_model=model_ready)
-    if not checkpoint(raw_result, sanitized, policy, decision=decision):
+    if sanitized.blocked:
+        if approve_result is None:
+            checkpoint(raw_result, sanitized, policy, decision=False)
+        else:
+            try:
+                approve_result(raw_result, sanitized)
+            except Exception as exc:
+                raise RuntimeError("local result review failed; no evidence was released") from exc
+        return None
+    if approve_result is not None:
+        try:
+            accepted = approve_result(raw_result, sanitized)
+        except Exception as exc:
+            raise RuntimeError("local result review failed; no evidence was released") from exc
+        if accepted is not True:
+            return None
+    elif not checkpoint(raw_result, sanitized, policy, decision=decision):
         return None
 
     root.mkdir(parents=True, exist_ok=True)
