@@ -26,7 +26,25 @@ _PEOPLE = (
 _ALPHANUM = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 _LV_WEIGHTS = (1, 6, 3, 7, 9, 10, 5, 8, 4, 2, 1)
 _STRUCTURAL_TOKENS = frozenset(
-    {"app", "api", "db", "func", "kv", "la", "logic", "nic", "rg", "rmq", "sql", "stg", "storage", "subnet", "vm", "vnet", "web"}
+    {
+        "app",
+        "api",
+        "db",
+        "func",
+        "kv",
+        "la",
+        "logic",
+        "nic",
+        "rg",
+        "rmq",
+        "sql",
+        "stg",
+        "storage",
+        "subnet",
+        "vm",
+        "vnet",
+        "web",
+    }
 )
 
 
@@ -66,12 +84,18 @@ def _resource_name(seed: bytes, original: str) -> str:
     suffix = suffix_match.group(1) if suffix_match else ""
     base = original[: -len(suffix)] if suffix else original
     tokens = re.split(r"([._-]+)", base)
-    word_indexes = [index for index, token in enumerate(tokens) if token and re.fullmatch(r"[A-Za-z0-9]+", token)]
+    word_indexes = [
+        index
+        for index, token in enumerate(tokens)
+        if token and re.fullmatch(r"[A-Za-z0-9]+", token)
+    ]
     if not word_indexes:
         return original
     rebuilt: list[str] = []
     for index, token in enumerate(tokens):
-        if index not in word_indexes or (index != word_indexes[0] and token.lower() in _STRUCTURAL_TOKENS):
+        if index not in word_indexes or (
+            index != word_indexes[0] and token.lower() in _STRUCTURAL_TOKENS
+        ):
             rebuilt.append(token)
             continue
         token_seed = hmac.new(seed, f"{index}|{token.lower()}".encode(), hashlib.sha256).digest()
@@ -115,7 +139,10 @@ def _iban(seed: bytes, original: str) -> str:
     body_length = len(compact) - 4
     body = "".join(_ALPHANUM[byte % len(_ALPHANUM)] for byte in seed[:body_length])
     rearranged = country + "00" + body
-    numeric = "".join(str(ord(char) - ord("A") + 10) if char.isalpha() else char for char in rearranged[4:] + rearranged[:4])
+    numeric = "".join(
+        str(ord(char) - ord("A") + 10) if char.isalpha() else char
+        for char in rearranged[4:] + rearranged[:4]
+    )
     check = f"{98 - (int(numeric) % 97):02d}"
     generated = country + check + body
     if " " in original:
@@ -181,12 +208,23 @@ def _generate(seed: bytes, finding: Finding) -> str:
 class Vault:
     """A keyed local mapping from detector findings to deterministic stand-ins."""
 
-    def __init__(self, key: bytes, path: Path | None = None):
+    def __init__(
+        self, key: bytes, path: Path | None = None, initial_pairs: dict[str, str] | None = None
+    ):
         self._key = key
         self.path = path or Path.home() / ".airlock" / "vault-session.json"
         self._pairs: dict[str, str] = {}
         self._originals: dict[tuple[str, str], str] = {}
+        self._known_originals: dict[str, str] = {}
         self._load()
+        for stand_in, original in (initial_pairs or {}).items():
+            current = self._pairs.get(stand_in)
+            if current is not None and current != original:
+                raise ValueError("stand-in mapping collision")
+            self._pairs[stand_in] = original
+        self._known_originals = {
+            _normalise(original): stand_in for stand_in, original in self._pairs.items()
+        }
 
     def _load(self) -> None:
         if not self.path.exists():
@@ -198,13 +236,19 @@ class Vault:
                 self._pairs = {str(key): str(value) for key, value in pairs.items()}
         except (OSError, json.JSONDecodeError, AttributeError):
             self._pairs = {}
-        self._originals = {(_normalise(original), ""): stand_in for stand_in, original in self._pairs.items()}
+        self._known_originals = {
+            _normalise(original): stand_in for stand_in, original in self._pairs.items()
+        }
 
     def stand_in(self, finding: Finding) -> str:
         identity = (finding.entity_type, _normalise(finding.text))
         existing = self._originals.get(identity)
         if existing:
             return existing
+        known = self._known_originals.get(_normalise(finding.text))
+        if known:
+            self._originals[identity] = known
+            return known
         if finding.entity_type == "AZURE_RESOURCE_ID":
             stand_in = self._resource_id(finding.text)
             current = self._pairs.get(stand_in)
@@ -212,6 +256,7 @@ class Vault:
                 raise ValueError("resource ID stand-in collision")
             self._pairs[stand_in] = finding.text
             self._originals[identity] = stand_in
+            self._known_originals[_normalise(finding.text)] = stand_in
             return stand_in
         counter = 0
         while counter < 128:
@@ -228,6 +273,7 @@ class Vault:
             if current is None or current == finding.text:
                 self._pairs[stand_in] = finding.text
                 self._originals[identity] = stand_in
+                self._known_originals[_normalise(finding.text)] = stand_in
                 return stand_in
             counter += 1
         raise ValueError("could not produce a non-overlapping stand-in")
@@ -249,8 +295,7 @@ class Vault:
             ("AZURE_RESOURCE_NAME", segments[4], 4),
         ]
         components.extend(
-            ("AZURE_RESOURCE_NAME", segments[index], index)
-            for index in range(8, len(segments), 2)
+            ("AZURE_RESOURCE_NAME", segments[index], index) for index in range(8, len(segments), 2)
         )
         return components
 

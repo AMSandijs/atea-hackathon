@@ -2,22 +2,28 @@
 
 import json
 import os
+import re
 import secrets
 import time
 from pathlib import Path
 from typing import Annotated
 
 import typer
+from rich.console import Console
+from rich.prompt import Confirm
 
 from .azure import capture_resource
+from .broker import QueryReview
 from .cases import prepare_case, restore_case
 from .checkpoint import checkpoint
 from .config import load_policy
 from .detect.model import local_endpoint
 from .gateway import send
+from .investigation import InvestigationTurn, run_investigation_turn
 from .models import AirlockResult
 from .rehydrate import rehydrate
 from .sanitize import sanitize
+from .scope import ScopeReview, create_case_scope
 from .vault import Vault
 
 app = typer.Typer(help="Local AI Airlock — inspect and safely transform model requests.")
@@ -179,6 +185,117 @@ def capture(
         typer.echo("Case was blocked or not approved; nothing was released.", err=True)
         raise typer.Exit(code=2)
     typer.echo(f"case_id={case_id}")
+
+
+def _confirm_scope(review: ScopeReview) -> bool:
+    console = Console(stderr=True)
+    console.print("[bold]Private Azure scope review[/bold]")
+    console.print(f"Case: {review.case_id}")
+    console.print(f"Expires: {review.expires_at.isoformat()}")
+    for target in review.targets:
+        console.print(f"{target.alias}: {target.resource_id} ({', '.join(target.operations)})")
+    return Confirm.ask("Approve and save this scope?", console=console, default=False)
+
+
+def _confirm_query(review: QueryReview) -> bool:
+    console = Console(stderr=True)
+    console.print("[bold]Azure read approval[/bold]")
+    console.print(f"Target alias: {review.target_alias}")
+    console.print(f"Real resource: {review.resource_id}")
+    console.print(f"Operation: {review.operation}")
+    console.print(f"Time range: last {review.time_range_minutes} minutes")
+    return Confirm.ask("Run this read-only Azure query?", console=console, default=False)
+
+
+@app.command(name="scope")
+def approve_scope(
+    case_id: str,
+    alias: Annotated[
+        list[str] | None, typer.Option("--alias", help="Repeat an alias such as VM_1.")
+    ] = None,
+    expires_in_minutes: Annotated[
+        int, typer.Option("--expires-in-minutes", min=1, max=1_440)
+    ] = 240,
+) -> None:
+    """Approve a private alias-to-resource scope for an existing case."""
+
+    resource_ids: dict[str, str] = {}
+    aliases = alias or []
+    if not aliases or any(not re.fullmatch(r"[A-Z]{1,8}_[0-9]{1,6}", item) for item in aliases):
+        typer.echo("Supply one or more aliases with --alias, for example --alias VM_1.", err=True)
+        raise typer.Exit(code=2)
+    if len(set(aliases)) != len(aliases):
+        typer.echo("Scope aliases must be unique.", err=True)
+        raise typer.Exit(code=2)
+    try:
+        for item in aliases:
+            resource_ids[item] = typer.prompt(
+                f"ARM resource ID for {item}", hide_input=True
+            ).strip()
+        created = create_case_scope(
+            case_id,
+            resource_ids,
+            approve_scope=_confirm_scope,
+            expires_in_minutes=expires_in_minutes,
+        )
+    except (RuntimeError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    except (EOFError, KeyboardInterrupt) as exc:
+        typer.echo("Scope setup cancelled; nothing was saved.", err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(
+        f"scope_approved={len(created.targets)} target(s); expires={created.expires_at.isoformat()}"
+    )
+
+
+@app.command(name="investigate")
+def investigate(
+    case_id: str,
+    goal: Annotated[
+        str, typer.Option("--goal", help="Alias-only investigation request from Copilot.")
+    ],
+    rules_only: Annotated[bool, typer.Option("--rules-only")] = False,
+) -> None:
+    """Run one locally planned, operator-approved Azure read and evidence release."""
+
+    if rules_only:
+        typer.echo("Rules-only evidence scan: the local prose-model sweep is disabled.", err=True)
+    try:
+        turn = run_investigation_turn(
+            case_id,
+            goal,
+            load_policy(),
+            approve_query=_confirm_query,
+            allow_rules_only=rules_only,
+        )
+    except (RuntimeError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    _report_investigation_turn(turn)
+
+
+@app.command(name="gui")
+def gui() -> None:
+    """Open the local desktop supervisor for a supervised investigation."""
+
+    from .gui import launch_gui
+
+    launch_gui()
+
+
+def _report_investigation_turn(turn: InvestigationTurn) -> None:
+    if turn.status == "released" and turn.evidence_id is not None:
+        typer.echo(f"evidence_id={turn.evidence_id}")
+        typer.echo("Copilot may now read this evidence with Airlock's read_evidence MCP tool.")
+        return
+    messages = {
+        "proposal_rejected": "Local planner rejected the request; no Azure query was run.",
+        "query_denied": "Query approval was denied; no Azure query was run.",
+        "result_not_released": "Result was blocked or not approved; no evidence was released.",
+    }
+    typer.echo(messages[turn.status], err=True)
+    raise typer.Exit(code=2)
 
 
 @app.command()

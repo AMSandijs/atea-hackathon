@@ -1,17 +1,22 @@
 # Build plan — Local AI Airlock
 
-## Implementation snapshot (25 Sep 2026)
+## Implementation snapshot (26 Sep 2026)
 
-The repository now contains implementations for the T1-T9 modules and the
-team-selected Copilot pilot (approved local cases, an MCP `read_case` tool,
-read-only single-resource Azure capture, and local restoration). The test suite
-and invented-data evaluation should be rerun on each laptop; this snapshot is
-not a claim that every original task acceptance criterion has been independently
+The repository contains the T1-T9 modules and team-selected Copilot pilot
+(approved local cases, an MCP `read_case` tool, read-only single-resource Azure
+capture, and local restoration), plus T13's local typed planner, T14's private
+case scope/broker authorization gate, T15's fixed read adapters, and T16's separate
+local result sanitizer/checkpoint with approved sanitized evidence available through
+MCP. T17 adds a terminal one-query supervisor and T18 adds a single-user local Tkinter
+supervisor over that same query/release state machine. Repeated Copilot handoff remains
+manual; no live Azure query is part of these tests.
+The test suite and invented-data evaluation should be rerun on each laptop; this snapshot
+is not a claim that every original task acceptance criterion has been independently
 verified. T10's second-opinion pass, T11's paired Copilot answer-quality
 measurement, and T12's clipboard/UI extras are **not implemented**. The MCP
-server is a pilot-specific, case-ID-only front door, not the originally proposed
-general `scan_text`/`ask_safely` interface. An actual Copilot session and live
-customer-environment safety remain unverified; see the README for boundaries.
+server remains a pilot-specific, case/evidence-ID-only front door, not the originally
+proposed general `scan_text`/`ask_safely` interface. An actual Copilot session and
+live Azure collection safety remain unverified; see the README for boundaries.
 
 Work in order. Each task is sized for one agent session. A task is done when its
 acceptance criteria pass and `pytest` is green. **Stop and report after each task.**
@@ -170,6 +175,151 @@ door before further cloud-model features: close the raw-prompt gateway leak, pre
 sanitized case from an exported Azure bundle, expose only approved cases over local MCP,
 and restore a saved answer locally. Prove that blocked or rejected bundles never become
 MCP-readable. Live Azure collection and resource mutations require separate validation.
+
+## T13 — Local typed query planner (first build slice)
+
+Implement `airlock/planner.py` as a loopback-only LM Studio client that maps a
+sanitized alias-only investigation goal and approved case capabilities into one
+strictly parsed proposal: operation, target alias and bounded time range. The planner
+does not execute Azure commands, mutate case scope, approve a query, or release output.
+
+**Done when:**
+- The request uses the configured local model and JSON Schema response format.
+- Invalid JSON, extra fields, missing local model, timeout, unknown aliases,
+  unsupported operation/target pairs and out-of-range time windows fail closed.
+- Unit tests prove only approved aliases and operations can be returned as proposals;
+  no Azure CLI call is made by this module.
+- Existing `pytest` and `ruff check .` pass.
+
+T13 added a proposal-only local planner. T14 adds private scope and a query authorization
+gate; later tasks will add mocked Azure adapters, separate result approval and sanitized
+MCP iteration, the local GUI, and finally a supervised disposable-subscription test.
+
+## T14 — Private scope and deterministic broker authorization
+
+Implement a private per-case scope binding validated aliases to supported Azure ARM
+resource IDs. Infer the allowed operation from the resource provider/type rather than
+accepting an operation list from the model or caller. Require an approved case and
+trusted-local operator approval to create scope. Add broker APIs that expose only alias
+capabilities to the planner and independently reload/revalidate case approval, scope,
+expiry, target, operation, and time range before requiring a separate per-query operator
+approval. Successful authorization returns an internal typed capability for a future
+fixed adapter; this task does not execute Azure commands or release results over MCP.
+
+**Done when:**
+- Only supported, structurally valid ARM resource IDs can be bound; provider/type and
+  operation are checked together and aliases are unique.
+- Scope creation fails for unapproved cases, absent/rejected approval, invalid duration,
+  invalid IDs, or an existing scope. Private resource IDs never appear in `read_case()`
+  or planner capabilities.
+- Broker authorization fails closed for expired/corrupt scope, rejected proposals,
+  unapproved cases, out-of-scope aliases, operation mismatches, and rejected/failed
+  operator approval. No Azure subprocess/API adapter is called in this task.
+- Tests and `ruff check .` pass. Stop after T14 and report; adapter and result-release
+  work remain separate tasks.
+
+## T15 — Fixed Azure read adapters (mocked validation only)
+
+Add the broker's only execution entry point. It must obtain a fresh T14 authorization
+and local per-query approval, then dispatch to fixed Azure CLI read operations for VM
+CPU, Application Insights failures, Logic App run history, and Azure SQL metrics. Use
+only fixed metric names, fixed GET route/API version, bounded time range, and a fixed
+record limit; no model-supplied KQL, URL, arguments, or shell text. Keep raw responses
+local and out of MCP pending the separate result-sanitization/release task. Do not run
+against a live Azure tenant in this task.
+
+**Done when:**
+- The broker refuses execution before resolving/invoking Azure if case approval,
+  scope, proposal validation, or per-query operator approval fails.
+- Each operation maps only to its documented, fixed read command; resource ID and time
+  range come from an independently validated authorization capability.
+- Output is bounded, Logic run input/output payloads are excluded, and raw results are
+  not persisted or exposed to MCP. CLI errors do not echo potentially sensitive output.
+- Tests mock the runner for every operation and prove rejection makes no process call;
+  no live Azure request is made. `pytest`, `ruff check .`, and formatting for changed
+  Python files pass. Stop after T15 and report.
+
+## T16 — Sanitize and separately approve Azure result release
+
+Implement the result-release boundary in `cases.py` and expose only its approved,
+sanitized output through a new read-only MCP `read_evidence(case_id, evidence_id)`
+tool. Require an approved parent case, cap input at 1 MiB, preserve existing case
+aliases, run the local sanitization pipeline, and require a distinct operator checkpoint
+after query approval. Rules-only release must be an explicit choice. Persist only
+approved sanitized evidence and its separate private reverse-map sidecar; never persist
+raw Azure results. Local restoration must use mappings from the case and its approved
+evidence. T16 remains offline/mocked and must not query a live tenant.
+
+**Done when:**
+- Missing/unapproved parent, oversized input, missing local model without explicit
+  rules-only mode, a block-tier finding, rejected approval, and checkpoint errors all
+  fail closed without an MCP-readable evidence record.
+- Approved evidence is returned by the MCP reader as sanitized text only. Invalid IDs,
+  corrupt/unapproved evidence, orphan mapping files, and unapproved parent cases are
+  rejected. The raw result and private mapping are absent from public evidence and MCP
+  output; restoration can resolve aliases introduced by released evidence.
+- Tests demonstrate query approval and result approval are separate; tests and `ruff
+  check .` pass, with changed Python files formatted. Do not run Azure against a tenant.
+  Stop after T16 and report.
+
+## T17 — Local supervised investigation turn (mocked Azure only)
+
+Wire the approved-case planner, query broker, result sanitizer/checkpoint, and evidence
+reader into a CLI flow. Add a local `scope` command that accepts repeated aliases and
+prompts for ARM resource IDs with input echo disabled, then asks for trusted operator
+approval before persisting the private scope. This keeps real IDs out of shell command
+history. Add `investigate CASE_ID --goal ...` to run one proposal at a time:
+plan locally from alias-only case capabilities, show the real target/operation/time
+range for local query approval, execute one fixed broker read, sanitize/checkpoint the
+raw result with a separate local decision, and print an evidence ID only on successful
+release. Copilot can then read that evidence through the existing MCP tool. The user
+manually transfers Copilot's next alias-only goal to the CLI and repeats; this task does
+not add a Copilot-to-Azure execution tool or GUI. Tests must mock the planner and Azure
+adapter. Do not query a live tenant.
+
+**Done when:**
+- Scope setup is explicit, local, validated, non-overwriting, hides typed resource IDs
+  from input echo and shows them only in the local approval review. Missing/rejected
+  scope approval persists nothing.
+- The local planner is required; its rejected/invalid proposals and query-approval
+  denials cause no Azure adapter call. The broker independently rechecks case, scope,
+  target, operation, and time range.
+- Query approval never implies result approval. Blocked or rejected results create no
+  MCP-readable evidence; successful turns return an opaque evidence ID whose MCP output
+  contains only sanitized text. Real identifiers stay in local review/scope state.
+- CLI tests cover approved scope and a full mocked investigation turn, plus rejection
+  paths. `pytest`, `ruff check .`, and changed-file formatting pass. No live Azure calls.
+  Stop after T17 and report; the GUI (T18) and automatic MCP request handoff are
+  separate tasks.
+
+## T18 — Single-user local investigation GUI
+
+Add `airlock gui` as a Tkinter desktop interface over the existing scope and one-turn
+investigation APIs. It is a focused control surface, not a chat UI or web service. Let
+the operator enter a case ID, create a private alias/resource scope with masked input,
+paste an alias-only Copilot goal, inspect the proposed read, and review raw-local versus
+sanitized Azure evidence before a separate release decision. The GUI must call the same
+`create_case_scope` and `run_investigation_turn` path as the CLI; it must not reimplement
+Azure commands or gate decisions. Run blocking planner/Azure work in a worker and marshal
+every approval dialog to the UI thread; cancellation, close, or callback error rejects.
+The result view never stores or exports raw Azure output. Copilot still receives only an
+approved evidence ID through the existing MCP reader; repeated next-read requests remain
+manual in T18. No live Azure requests in this task.
+
+**Done when:**
+- `airlock gui` starts the desktop supervisor without opening a listener. It supports
+  case/scope setup and one investigation turn, and shows distinct scope, query, and
+  result-release approval steps.
+- Resource IDs are masked during entry and are visible only in explicit local approval
+  views. Result approval shows the exact sanitized candidate and detector uncertainty;
+  block-tier results cannot be released even if a callback attempts approval.
+- Worker/UI handoff fails closed on cancellation, callback exceptions, and window close.
+  No raw result or reverse mapping is logged, saved to a public evidence file, or sent
+  to MCP. Evidence is readable only after explicit result approval.
+- Headless tests cover result-review callback behavior, block/reject cases, worker-to-UI
+  approval dispatch, and command registration. `pytest`, `ruff check .`, and
+  changed-file formatting pass. No live Azure calls. Stop after T18 and report; automatic
+  Copilot request handoff remains a later task.
 
 ---
 
